@@ -9,7 +9,7 @@ mkdir -p "$AGY_DIR/skills"
 mkdir -p "$AGY_DIR/config"
 
 echo "Syncing skills..."
-cp -r "$GEMINI_DIR/skills/"* "$AGY_DIR/skills/"
+rsync -a --exclude 'venv' --exclude '.venv' --exclude '__pycache__' "$GEMINI_DIR/skills/" "$AGY_DIR/skills/"
 
 echo "Syncing config..."
 cp -r "$GEMINI_DIR/config/"* "$AGY_DIR/config/"
