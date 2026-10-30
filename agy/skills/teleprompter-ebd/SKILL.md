@@ -52,8 +52,9 @@ O professor precisa que você transforme o texto da aula em uma versão para lei
 - IGNORE ideia central, perguntas (discussão e reflexão), e também tarefas para casa.
 
 # SAÍDA (Git Workflow)
-- O texto da aula "crua" a ser convertido será fornecido pelo usuário em formato `.md`. Esse arquivo estará localizado no diretório do curso, na estrutura: `/mnt/c/Users/lplim/repos/revisao_ebd/{nome_do_curso}/`.
-- Salve o texto pronto para teleprompter em um novo arquivo `.md` (usando a ferramenta `write_to_file`) dentro de uma subpasta `teleprompter/` no mesmo repositório do curso (ex: `/mnt/c/Users/lplim/repos/revisao_ebd/{nome_do_curso}/teleprompter/aula_X_teleprompter.md`).
+- **Mapeamento de Diretórios (Registro Central)**: Para encontrar o diretório exato do curso sem fazer buscas lentas, inicie lendo o arquivo `/mnt/c/Users/lplim/repos/revisao_ebd/cursos_registrados.json` (com `view_file`). Se o curso não constar no JSON, faça a busca no disco para achar a pasta e, em seguida, **atualize** o JSON adicionando o novo curso para usos futuros.
+- O texto da aula "crua" a ser convertido será fornecido pelo usuário em formato `.md`. Esse arquivo estará localizado no diretório do curso.
+- Salve o texto pronto para teleprompter em um novo arquivo `.md` (usando a ferramenta `write_to_file`) dentro de uma subpasta `teleprompter/` no diretório do curso (ex: `{diretorio_do_curso}/teleprompter/aula_X_teleprompter.md`).
 - O texto gerado no arquivo deve ter parágrafos bem distribuídos.
 - Após salvar o arquivo, utilize a ferramenta `run_command` para adicionar o arquivo no git e criar um commit no repositório correspondente.
 - A mensagem do commit DEVE seguir estritamente o formato: `git commit -m "Curso [Nome do Curso] - Aula [Número da Aula] - versão teleprompter"`

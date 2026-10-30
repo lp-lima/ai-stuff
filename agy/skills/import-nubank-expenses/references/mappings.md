@@ -52,5 +52,6 @@
 - **Installments**: 
   - **Filter**: If a transaction is a 2nd installment or later (e.g., "Parcela 2/10", "Parcela 3/5"), **discard it**.
   - **Filter (Static)**: Discard static recurring or non-purchase entries: `Tokio Marine`, `Come And Se`, `Crunchyroll`, `Amazonprimebr`, `PetLove`, `Meli+`, `Plano NuCel`, `Wellhub`, and `Pagamento recebido`.
+  - **Filter (Specific)**: Discard `Paypal *Google Google` only if the amount is exactly `23.99` (Gemini recurring bill).
   - If a transaction is the first installment (e.g., "Parcela 1/X"), expand it into **X separate rows**.
   - Each row must have an incremented `Parcela atual` and `Ano e mês de pagamento`.

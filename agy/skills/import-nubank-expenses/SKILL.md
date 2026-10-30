@@ -19,24 +19,25 @@ This skill automates the process of importing Nubank credit card transactions in
 3.  **Python Dependencies**:
     -   A virtual environment at `venv/` contains `gspread` and `google-auth`.
 
-## Workflow
+## Workflow (Zero-Touch Automation)
 
-1.  **Resolve File Path**: Identify the credit card bill file (CSV) based on the user's description. Fall back to the latest `Nubank*.csv` in `Downloads/`.
-2.  **Classification (Agent Phase)**:
-    -   **Filter**: 
-        -   **IGNORE** any entry that is marked as a second installment or later (e.g., "Parcela 2/3").
-        -   **IGNORE** static recurring/non-purchase entries: `Tokio Marine`, `Come And Se`, `Crunchyroll`, `Amazonprimebr`, `PetLove`, `Meli+`, `Plano NuCel`, `Wellhub`, and `Pagamento recebido`.
-    -   **Map & Classify**: Use [mappings.md](references/mappings.md) to assign `Categoria`, `Subcategoria`, and `Subgrupo`. Set `Quem gastou?` to "Ambos", `Pago por quem?` to "Lucas", and `Adiamento de pagamento` to `1`.
-    -   **Staging**: Save the classified data to `scripts/classified_data.json`.
-3. **Processing & Upload (Script Phase)**:
-    -   Execute the script using the virtual environment: `venv/bin/python3 scripts/process_import.py scripts/classified_data.json`.
-    -   The script authenticates via the service account key at `assets/credentials.json`.
-    -   The script will:
+To guarantee the user does not have to approve multiple shell commands during execution, the classification and upload processes have been fully automated into a single Python script (`scripts/full_import.py`). 
 
-        -   Normalize dates to the 1st of the month.
-        -   Apply a one-month payment offset.
-        -   Expand installments into multiple rows.
-        -   **Directly upload** the data to the "Dump de fatura" sheet, overwriting range `A2:O`.
+1.  **Configure Target Date (Agent Phase)**:
+    -   If the user specifies a particular date or file identifier, use the `replace_file_content` tool to edit `/home/lp-lima/.gemini/skills/import-nubank-expenses/scripts/config.json`.
+    -   Update the `target_date` field (e.g., `{"target_date": "2026-09-09"}`).
+    -   If the user does not specify a date, you can skip this step. The script will automatically default to the most recently downloaded `Nubank*.csv`.
+
+2.  **Execute Single Static Command (Script Phase)**:
+    -   Run the following **EXACT command** using the `run_command` tool. Do not change a single character in this string. This ensures the user can check "Always Allow" to approve this command permanently:
+        `/home/lp-lima/.gemini/skills/import-nubank-expenses/venv/bin/python3 /home/lp-lima/.gemini/skills/import-nubank-expenses/scripts/full_import.py`
+    -   This script automatically handles:
+        -   Resolving the correct file from `~/Downloads`.
+        -   Applying all classification logic, filters, and mapping rules (as per `references/mappings.md`).
+        -   Normalizing dates, handling installment expansions, and one-month payment offsets.
+        -   Uploading the final result directly to the "Dump de fatura" sheet (overwriting `A2:O`).
+
+**Important**: NEVER write helper scripts (e.g., `classify.py`) on the fly, and NEVER run exploratory bash commands (e.g., `find`). Strictly follow the two steps above to maintain a zero-touch experience.
 
 ## Reference
 
