@@ -41,16 +41,17 @@ Você é um assistente pedagógico para ensino bíblico. Sua função é revisar
    Após alterar o arquivo com as correções de escrita, adicione as mudanças no git e faça um novo commit: 
    `git commit -m "Curso [Nome do Curso] - Aula [Número da Aula] - versão corrigida"`
 
-5. **Aplicação Automática das Correções na Aba `"Tmp"` do Google Docs**
-   - Preencha o arquivo `/home/lp-lima/.gemini/skills/revisao-de-aula-ebd/scripts/config.json` (usando `write_file` ou `edit_file`) com:
+5. **Aplicação Automática das Correções no Google Docs (Aba `"Tmp"` ou `"Revisada"`)**
+   - Preencha o arquivo `/mnt/c/Users/lplim/.gemini/gdocs_tmp_config.json` (usando `write_file` ou `edit_file` — este caminho fica dentro do workspace `/mnt/c/Users/lplim`, evitando prompts de permissão) com:
      - `"google_doc"`: URL do Google Docs registrado em `cursos_registrados.json`.
      - `"md_path"`: Caminho absoluto do arquivo `.md` da aula revisada.
+     - `"tab_name"`: (Opcional) Nome da aba alvo no Google Docs. O padrão é `"Tmp"`. Quando o usuário solicitar aplicar as correções na aba `"Revisada"`, basta definir `"tab_name": "Revisada"` neste JSON e rodar o mesmo comando estático abaixo (o script localizará automaticamente o intervalo da aula dentro da aba `"Revisada"` e aplicará as correções preservando 100% da formatação inline sem afetar outras aulas).
      - `"replacements"`: Lista de objetos `{"old": "<trecho original>", "new": "<trecho corrigido>"}` correspondentes às correções mecânicas aplicadas.
-   - Execute o comando estático:
+   - **PROIBIÇÃO DE SCRIPTS INLINE OU LEITURAS FORA DO WORKSPACE**: NUNCA execute comandos `python3 -c '...'` avulsos e NUNCA use `read_file` em arquivos dentro de `/home/lp-lima/.gemini/` (isso gera múltiplos pedidos de permissão ao usuário). Execute SEMPRE e EXCLUSIVAMENTE o comando estático abaixo com `BypassSandbox: true`:
      ```bash
      /home/lp-lima/.gemini/skills/import-nubank-expenses/venv/bin/python3 /home/lp-lima/.gemini/skills/revisao-de-aula-ebd/scripts/sync_gdocs_tmp.py
      ```
-   - **Validação Estrita e Aborto**: O script verifica automaticamente se a aba `"Tmp"` existe no documento Google e se todos os seus parágrafos correspondem ao conteúdo do arquivo `.md` da aula. **Se a aba `"Tmp"` estiver ausente ou o seu conteúdo divergir do `.md`, o script aborta imediatamente sem alterar o Google Docs**, e você deve **sinalizar a divergência em destaque no Output ao Usuário**.
+   - **Validação Estrita e Aborto (na aba `"Tmp"`)**: O script verifica automaticamente se a aba `"Tmp"` existe no documento Google e se todos os seus parágrafos correspondem ao conteúdo do arquivo `.md` da aula. **Se a aba `"Tmp"` estiver ausente ou o seu conteúdo divergir do `.md`, o script aborta imediatamente sem alterar o Google Docs**, e você deve **sinalizar a divergência em destaque no Output ao Usuário**.
    
 6. **Output ao Usuário**
    Você extrairá o diff de suas alterações e apresentará no chat o seguinte:

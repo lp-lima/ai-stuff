@@ -31,8 +31,8 @@ As edições são feitas programaticamente via `documents.batchUpdate` na Google
    - Sob o título de cada aula e na terceira tarefa de casa, substitua o termo `'Referência'` ou `'referência'` pelo endereço do versículo-chave indicado nas diretrizes (ex: `2 Timóteo 3.16`). **NÃO USE `:` como separador de capítulo e versículo — use sempre `.`**.
    - Onde houver o marcador `'conteúdo do versículo na versão NVI'`, substitua pelo texto bíblico completo, especificamente na versão **NVI 2011** (pesquise a NVI 2011 usando a ferramenta nativa `search_web` para garantir a versão exata).
 5. **Abrangência (Padrão = Apostila Inteira):**
-   - **Por padrão**, processe **todas as aulas enumeradas** da apostila de uma só vez (deixando `"aulas": []` no `config.json`). IGNORE apenas a introdução ao curso ou seções que não sejam aulas enumeradas.
-   - **Exceção (Aulas Específicas):** Caso o usuário especifique apenas algumas aulas (ex: *"apenas a Aula 06"* ou *"aulas 07 e 08"*), preencha `"aulas"` no `config.json` apenas com as aulas solicitadas (ex: `[6]` ou `[7, 8]`).
+   - **Por padrão**, processe **todas as aulas enumeradas** da apostila de uma só vez (omitindo `--aulas` na linha de comando). IGNORE apenas a introdução ao curso ou seções que não sejam aulas enumeradas.
+   - **Exceção (Aulas Específicas):** Caso o usuário especifique apenas algumas aulas (ex: *"apenas a Aula 06"* ou *"aulas 07 e 08"*), passe `--aulas 6` ou `--aulas 7 8` na linha de comando.
 6. **Integridade de Formatação:** Não adicione comentários, explicações ou preâmbulos. Mantenha 100% da formatação original de cada seção do documento no Google Docs.
 
 ## Processo (Passo a passo por aula realizada pelo script)
@@ -46,24 +46,26 @@ As edições são feitas programaticamente via `documents.batchUpdate` na Google
 5. Preenche cada bloco `(corpo do tópico)` aplicando o formato `(DIRETRIZES: [Texto das diretrizes])`.
 6. Substitui `referência` na terceira tarefa de casa (`Memorize o versículo-chave: <Referência>.`).
 
-## Fluxo de Automação Zero-Touch
+## Fluxo de Automação Zero-Touch (Via Argumentos de Linha de Comando)
 
-Para evitar que o usuário precise aprovar comandos variados no terminal, nunca escreva scripts avulsos. Utilize sempre o arquivo de configuração `/home/lp-lima/.gemini/skills/preencher-apostila-de-ebd/scripts/config.json` e execute sempre o **mesmo comando estático**:
+Para evitar prompts de leitura/edição de arquivos fora do workspace (`~/.gemini`), **NÃO leia nem edite** nenhum arquivo dentro de `/home/lp-lima/.gemini/`. Passe todos os parâmetros diretamente via linha de comando mantendo sempre o **mesmo prefixo de comando**:
 
 ```bash
 /home/lp-lima/.gemini/skills/import-nubank-expenses/venv/bin/python3 /home/lp-lima/.gemini/skills/preencher-apostila-de-ebd/scripts/preencher_gdocs.py
 ```
 
-### Passo 1: Inspeção das Diretrizes (`"mode": "inspect"`)
-1. Edite `/home/lp-lima/.gemini/skills/preencher-apostila-de-ebd/scripts/config.json` usando `write_file` ou `edit_file` com:
-   - `"original_doc"`: URL ou ID do Google Doc da apostila.
-   - `"diretrizes_doc"`: URL ou ID do Google Doc das diretrizes.
-   - `"aulas"`: `[]` por padrão (para processar **todas as aulas** da apostila de uma vez), ou uma lista com números específicos caso o usuário tenha restringido o escopo (ex: `[6]` ou `[7, 8]`).
-   - `"mode"`: `"inspect"`.
-2. Execute o comando estático acima (com `BypassSandbox: true` caso necessário para acesso à rede/credenciais) para ler as diretrizes e descobrir quais são os versículos-chave das aulas solicitadas.
+### Passo 1: Inspeção das Diretrizes (`--mode inspect`)
+Execute o comando passando `--original`, `--diretrizes`, `--mode inspect` e opcionalmente `--aulas`:
 
-### Passo 2: Busca do Versículo NVI 2011 e Aplicação (`"mode": "apply"`)
+```bash
+/home/lp-lima/.gemini/skills/import-nubank-expenses/venv/bin/python3 /home/lp-lima/.gemini/skills/preencher-apostila-de-ebd/scripts/preencher_gdocs.py --original "<URL_APOSTILA>" --diretrizes "<URL_DIRETRIZES>" --aulas 8 --mode inspect
+```
+*(Se o usuário quiser todas as aulas da apostila, omita `--aulas 8`).*
+
+### Passo 2: Busca do Versículo NVI 2011 e Aplicação (`--mode apply`)
 1. Use a ferramenta nativa `search_web` para buscar o texto exato na **NVI 2011** de cada versículo-chave identificado no Passo 1.
-2. Atualize `/home/lp-lima/.gemini/skills/preencher-apostila-de-ebd/scripts/config.json` preenchendo `"nvi_verses"` (ex: `{"6": "Texto do versículo..."}`) e alterando `"mode"` para `"apply"`.
-3. Execute novamente o **mesmo comando estático**:
-   `/home/lp-lima/.gemini/skills/import-nubank-expenses/venv/bin/python3 /home/lp-lima/.gemini/skills/preencher-apostila-de-ebd/scripts/preencher_gdocs.py`
+2. Execute novamente o comando com `--mode apply` e `--verse "<NUM>=<TEXTO_NVI>"` (repita `--verse` para cada aula se houver mais de uma):
+
+```bash
+/home/lp-lima/.gemini/skills/import-nubank-expenses/venv/bin/python3 /home/lp-lima/.gemini/skills/preencher-apostila-de-ebd/scripts/preencher_gdocs.py --original "<URL_APOSTILA>" --diretrizes "<URL_DIRETRIZES>" --aulas 8 --verse "8=Texto exato na NVI 2011" --mode apply
+```

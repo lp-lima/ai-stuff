@@ -1,0 +1,15 @@
+# Credentials and secrets
+**/credentials.json
+**/*secret*.json
+**/*token*.json
+**/*.pem
+**/*.key
+
+# Personal / runtime data
+**/classified_data.json
+
+# Python environments and cache
+**/venv/
+**/.venv/
+**/__pycache__/
+*.pyc
