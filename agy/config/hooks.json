@@ -2,7 +2,7 @@
   "auto-approve-gpg": {
     "PreToolUse": [
       {
-        "matcher": "run_command",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
