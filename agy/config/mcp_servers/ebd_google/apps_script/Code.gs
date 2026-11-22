@@ -1,51 +1,62 @@
 /**
- * Google Apps Script Web App auxiliar do MCP `ebd-google`.
+ * Google Apps Script Web App handler for the `ebd-google` MCP server.
  *
- * Função única: duplicar um arquivo modelo de Teleprompter dentro da pasta
- * destino no seu My Drive pessoal (contornando o limite storageQuota=0 da
- * Service Account) e retornar o ID/URL do novo Google Doc.
+ * Single responsibility: duplicate a Teleprompter template document inside the
+ * destination folder in personal My Drive (working around the Service Account
+ * storageQuota=0 limitation) and return the new Google Doc's ID, name, and URL.
  *
- * IMPORTANTE: Guarde o token secreto nas Propriedades do Script
- * (Configurações do Projeto -> Propriedades do script -> chave: EBD_COPY_SECRET),
- * nunca hardcoded no repositório.
+ * IMPORTANT: Store the shared secret in Script Properties
+ * (Project Settings -> Script Properties -> key: EBD_COPY_SECRET).
+ * Never hardcode secrets in the repository.
  */
 
 function doPost(e) {
+  console.log("POST execution started. Checking authorization...");
+
   try {
-    var payload = JSON.parse(e.postData.contents || "{}");
-    var expectedSecret = PropertiesService.getScriptProperties().getProperty("EBD_COPY_SECRET");
+    const payload = JSON.parse((e && e.postData && e.postData.contents) || "{}");
+    const expectedSecret = PropertiesService.getScriptProperties().getProperty("EBD_COPY_SECRET");
 
     if (!expectedSecret || payload.secret !== expectedSecret) {
+      console.warn("Authorization failed: Missing or invalid EBD_COPY_SECRET.");
       return jsonResponse({ ok: false, error: "Unauthorized: invalid or missing secret." });
     }
 
     if (payload.action !== "copy_file") {
+      console.warn("Unsupported action received: " + payload.action);
       return jsonResponse({ ok: false, error: "Unsupported action: " + payload.action });
     }
 
-    var templateFileId = payload.templateFileId;
-    var folderId = payload.folderId;
-    var newName = payload.newName;
+    const templateFileId = payload.templateFileId;
+    const folderId = payload.folderId;
+    const newName = payload.newName;
 
     if (!templateFileId || !folderId || !newName) {
+      console.error("Execution aborted: Missing templateFileId, folderId, or newName.");
       return jsonResponse({ ok: false, error: "Missing templateFileId, folderId, or newName." });
     }
 
-    var templateFile = DriveApp.getFileById(templateFileId);
-    var destFolder = DriveApp.getFolderById(folderId);
-    var copy = templateFile.makeCopy(newName, destFolder);
+    console.log('Copying template "' + templateFileId + '" into folder "' + folderId + '" as "' + newName + '"...');
+    const templateFile = DriveApp.getFileById(templateFileId);
+    const destFolder = DriveApp.getFolderById(folderId);
+    const copy = templateFile.makeCopy(newName, destFolder);
 
+    console.log('File copied successfully. New ID: "' + copy.getId() + '"');
     return jsonResponse({
       ok: true,
       id: copy.getId(),
       name: copy.getName(),
       url: copy.getUrl()
     });
-  } catch (err) {
-    return jsonResponse({ ok: false, error: String(err) });
+  } catch (error) {
+    console.error("An error occurred during POST execution: " + error.message);
+    return jsonResponse({ ok: false, error: String(error) });
   }
 }
 
+/**
+ * Helper function to return a JSON HTTP response
+ */
 function jsonResponse(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))

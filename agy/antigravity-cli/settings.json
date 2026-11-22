@@ -1,5 +1,4 @@
 {
-  "agentMode": "accept-edits",
   "allowNonWorkspaceAccess": true,
   "artifactReviewPolicy": "agent-decides",
   "model": "Gemini 3.1 Pro (High)",
