@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "canva": {
+      "serverUrl": "https://mcp.canva.com/mcp"
+    },
+    "ebd-google": {
+      "command": "/home/lp-lima/.gemini/skills/import-nubank-expenses/venv/bin/python3",
+      "args": [
+        "/home/lp-lima/.gemini/config/mcp_servers/ebd_google/server.py"
+      ]
+    }
+  }
+}
