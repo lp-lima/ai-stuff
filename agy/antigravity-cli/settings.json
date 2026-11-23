@@ -50,7 +50,8 @@
       "read_file(/home/lp-lima/.gemini/antigravity-cli/mcp)",
       "read_file(/mnt/c/Users/lplim/repos/revisao_ebd/cursos_registrados.json)",
       "mcp(canva/*)",
-      "mcp(ebd-google/*)"
+      "mcp(ebd-google/*)",
+      "command(/home/lp-lima/.gemini/skills/sync-backup-configs/sync.sh)"
     ]
   },
   "statusLine": {
