@@ -553,6 +553,7 @@ def tool_read_lesson(args: Dict[str, Any]) -> Dict[str, Any]:
         "doc_id": doc_id,
         "doc_url": f"https://docs.google.com/document/d/{doc_id}/edit?tab={tab_id}",
         "lesson_num": lesson_num,
+        "is_course_intro": (lesson_num == 0 or len(parsed["topics"]) == 0),
         "active_tab": active_tab,
         "revisada_last_lesson": rev_last,
         "resolution_reason": reason,
@@ -933,11 +934,24 @@ def _build_rich_append_requests(
 
     # Insert full text in one insertText call so indices are 100% deterministic
     combined_text = "".join(sp["text"] for sp in para_specs)
+    combined_u16 = utf16_len(combined_text)
     reqs.append(
         {
             "insertText": {
                 "location": {"index": cur, "tabId": dest_tab_id},
                 "text": combined_text,
+            }
+        }
+    )
+    # Explicitly strip any inherited bullets across the appended range before re-applying lists only where needed
+    reqs.append(
+        {
+            "deleteParagraphBullets": {
+                "range": {
+                    "startIndex": cur,
+                    "endIndex": cur + combined_u16,
+                    "tabId": dest_tab_id,
+                }
             }
         }
     )
@@ -1317,7 +1331,21 @@ def _populate_teleprompter_tab(
                 }
             }
         )
+        # Ensure the title paragraph has no stray bullet
+        prep_reqs.append(
+            {
+                "deleteParagraphBullets": {
+                    "range": {
+                        "startIndex": title_start,
+                        "endIndex": title_start + title_u16 + 1,
+                        "tabId": tab_id,
+                    }
+                }
+            }
+        )
     else:
+        # Brand-new or empty tab: write title + "\n" so paragraph 1 is exclusively HEADING_1
+        # and paragraph 2 (the trailing empty paragraph) starts cleanly as NORMAL_TEXT.
         if old_title_len > 0:
             prep_reqs.append(
                 {
@@ -1334,7 +1362,18 @@ def _populate_teleprompter_tab(
             {
                 "insertText": {
                     "location": {"index": title_start, "tabId": tab_id},
-                    "text": title,
+                    "text": title + "\n",
+                }
+            }
+        )
+        prep_reqs.append(
+            {
+                "deleteParagraphBullets": {
+                    "range": {
+                        "startIndex": title_start,
+                        "endIndex": title_start + title_u16 + 2,
+                        "tabId": tab_id,
+                    }
                 }
             }
         )
@@ -1351,6 +1390,19 @@ def _populate_teleprompter_tab(
                 }
             }
         )
+        prep_reqs.append(
+            {
+                "updateParagraphStyle": {
+                    "range": {
+                        "startIndex": title_start + title_u16 + 1,
+                        "endIndex": title_start + title_u16 + 2,
+                        "tabId": tab_id,
+                    },
+                    "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                    "fields": "namedStyleType",
+                }
+            }
+        )
 
     r1 = s.post(
         f"https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate",
@@ -1361,7 +1413,7 @@ def _populate_teleprompter_tab(
             f"Erro ao preparar título/corpo da aba '{tab['tabProperties'].get('title')}' ({r1.status_code}): {r1.text}"
         )
 
-    # Re-fetch exact endIndex after title update, then insert body (+ optional closing sections)
+    # Re-fetch exact structure after title update
     doc2 = fetch_doc(doc_id)
     fresh_tab = next(
         (t for t in doc2.get("tabs", []) if t["tabProperties"]["tabId"] == tab_id), None
@@ -1369,24 +1421,74 @@ def _populate_teleprompter_tab(
     if not fresh_tab:
         raise RuntimeError(f"Aba {tab_id} não encontrada após atualização do título.")
     body2 = fresh_tab["documentTab"]["body"]["content"]
-    insert_at = max(1, body2[-1]["endIndex"] - 1)
+    para_els2 = [el for el in body2 if "paragraph" in el]
+
+    # Guarantee there is a dedicated body paragraph AFTER paragraph 1 (HEADING_1)
+    # and strip any residual list/bullet inherited from the template's last paragraph (e.g., Tarefas de casa).
+    if len(para_els2) < 2:
+        add_nl_at = para_els2[-1]["endIndex"] - 1
+        r_nl = s.post(
+            f"https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate",
+            json={
+                "requests": [
+                    {
+                        "insertText": {
+                            "location": {"index": add_nl_at, "tabId": tab_id},
+                            "text": "\n",
+                        }
+                    }
+                ]
+            },
+        )
+        if r_nl.status_code != 200:
+            raise RuntimeError(f"Erro ao criar parágrafo de corpo ({r_nl.status_code}): {r_nl.text}")
+        doc2 = fetch_doc(doc_id)
+        fresh_tab = next(
+            (t for t in doc2.get("tabs", []) if t["tabProperties"]["tabId"] == tab_id), None
+        )
+        body2 = fresh_tab["documentTab"]["body"]["content"]
+        para_els2 = [el for el in body2 if "paragraph" in el]
+
+    body_start = para_els2[1]["startIndex"]
+    body_end = para_els2[-1]["endIndex"]
+    insert_at = body_end - 1
 
     body_lines = ["", *[p.rstrip("\n") for p in paragraphs], "", ""]
     tp_text = "\n".join(body_lines) + "\n"
     tp_u16 = utf16_len(tp_text)
 
     fill_reqs: List[Dict[str, Any]] = [
+        # Defense 1: strip any residual bullet on the trailing template paragraph BEFORE inserting text
+        {
+            "deleteParagraphBullets": {
+                "range": {
+                    "startIndex": body_start,
+                    "endIndex": body_end,
+                    "tabId": tab_id,
+                }
+            }
+        },
         {
             "insertText": {
                 "location": {"index": insert_at, "tabId": tab_id},
                 "text": tp_text,
             }
         },
+        # Defense 2: explicitly clear bullets across the entire inserted body + trailing newline
+        {
+            "deleteParagraphBullets": {
+                "range": {
+                    "startIndex": body_start,
+                    "endIndex": insert_at + tp_u16 + 1,
+                    "tabId": tab_id,
+                }
+            }
+        },
         {
             "updateParagraphStyle": {
                 "range": {
-                    "startIndex": insert_at,
-                    "endIndex": insert_at + tp_u16,
+                    "startIndex": body_start,
+                    "endIndex": insert_at + tp_u16 + 1,
                     "tabId": tab_id,
                 },
                 "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
@@ -1450,11 +1552,12 @@ def tool_publish_teleprompter(args: Dict[str, Any]) -> Dict[str, Any]:
     )
     src_els = get_lesson_elements(src_tab, active_tab, lesson_num)
     src_lists = src_tab.get("documentTab", {}).get("lists", {})
-    closing_els = _extract_closing_sections_from_apostila(src_els)
+    # Course introductions (Aula 00) have no Ideia Central / Perguntas / Tarefas closing sections
+    closing_els = [] if lesson_num == 0 else _extract_closing_sections_from_apostila(src_els)
 
     if not title:
         parsed_src = parse_lesson_structure(src_els, src_lists)
-        title = parsed_src["title_full"]
+        title = parsed_src["title_full"] or ("Introdução ao curso" if lesson_num == 0 else f"Aula {lesson_num:02d}")
 
     # 2. Locate sibling Teleprompter folder & determine target doc
     tp_folder = find_sibling_folder(apostila_id, "teleprompter")
