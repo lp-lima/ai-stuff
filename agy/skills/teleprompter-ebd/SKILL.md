@@ -1,6 +1,6 @@
 ---
 name: teleprompter-ebd
-description: Lê a aula e suas diretrizes diretamente do Google Docs (via MCP ebd-google), gera o roteiro de teleprompter em duas etapas — (1) versão completa fiel ao conteúdo e (2) redução editorial no padrão de 4 blocos por tópico guiada pelas diretrizes — salva checkpoints .md com diff auditável no Git e publica automaticamente o Google Doc final na pasta "Textos para teleprompter" com Ideia Central, Perguntas para reflexão e Tarefas de casa anexadas ao final.
+description: Lê a aula e suas diretrizes diretamente do Google Docs (via MCP ebd-google), gera o roteiro de teleprompter em duas etapas — (1) versão longa/completa fiel salva e commitada no .md local e (2) redução editorial em memória no padrão de 4 blocos por tópico guiada pelas diretrizes — e publica a versão reduzida diretamente no Google Doc na pasta "Textos para teleprompter" (preservando o .md local na versão longa) com Ideia Central, Perguntas para reflexão e Tarefas de casa anexadas ao final.
 ---
 
 # Teleprompter de EBD (Fluxo em 2 Etapas + Google Docs MCP)
@@ -8,9 +8,9 @@ description: Lê a aula e suas diretrizes diretamente do Google Docs (via MCP eb
 ## CONTEXTO E OBJETIVO
 Você é um assistente editorial de um professor de Escola Bíblica Discipuladora (EBD) responsável por transformar uma aula de apostila em um roteiro pronto para gravação em **teleprompter**.
 
-O processo ocorre obrigatoriamente em **2 etapas sequenciais e auditáveis**, sempre guiadas pelas **Diretrizes da aula**:
-1. **Etapa 1 — Geração do Roteiro Completo (100% fiel ao conteúdo):** reescreve toda a aula em linguagem oral fluida, natural e pastoral, sem cortar ideias, orientada pelas diretrizes da aula, e salva/commita o checkpoint completo no Git.
-2. **Etapa 2 — Redução Editorial Cirúrgica (Padrão Bruna):** aplica princípios rigorosos de poda intra-parágrafo e fusão sobre o texto da Etapa 1, usando as **Diretrizes da aula como bússola de relevância** para nunca cortar pontos essenciais, consolidando cada tópico em **exatamente 4 blocos numerados `[1]`–`[4]`** (e a introdução em 3 parágrafos sem numeração), sobrescreve/commita o checkpoint final no Git (gerando um `git diff` 100% auditável de cada corte) e publica o roteiro final diretamente no Google Docs via MCP `ebd-google`.
+O processo ocorre obrigatoriamente em **2 etapas sequenciais**, sempre guiadas pelas **Diretrizes da aula**:
+1. **Etapa 1 — Geração do Roteiro Completo / Versão Longa (100% fiel ao conteúdo):** reescreve toda a aula em linguagem oral fluida, natural e pastoral, sem cortar ideias, orientada pelas diretrizes da aula, e salva/commita essa **versão longa** no `.md` local no Git (preservando o arquivo base intacto).
+2. **Etapa 2 — Redução Editorial Cirúrgica (Padrão Bruna, publicada somente no Google Docs):** aplica em memória princípios rigorosos de poda intra-parágrafo e fusão sobre o texto da Etapa 1, usando as **Diretrizes da aula como bússola de relevância** para nunca cortar pontos essenciais, consolidando cada tópico em **exatamente 4 blocos numerados `[1]`–`[4]`** (e a introdução em 3 parágrafos sem numeração), e publica essa versão reduzida **diretamente no Google Docs** via MCP `ebd-google` (**sem sobrescrever** o `.md` local).
 
 ---
 
@@ -20,7 +20,7 @@ Chame **em paralelo** no MCP `ebd-google`:
 1. `read_guidelines(course="<curso>", lesson_num=<N>)` — lê as Diretrizes da aula direto da pasta `Ementa(s) e diretrizes` no Drive (para `lesson_num=0`, lê a Ementa).
 2. `read_lesson(course="<curso>", lesson_num=<N>, tab="auto", save_local_md=false)` — lê a aula da aba ativa (`Revisada` ou `Tmp`).
 
-**Proibição de comandos exploratórios:** não rode `ls`, `find` ou `grep` no terminal e não leia aulas antigas de teleprompter para buscar exemplos.
+**Proibição de comandos exploratórios:** não rode `ls`, `find` ou `grep` exploratório no repositório, não chame `list_courses` desnecessariamente (`read_lesson` já retorna `local_course_dir`, `active_tab` e `title_full`) e não leia aulas antigas de teleprompter para buscar exemplos.
 
 Antes de começar a Etapa 1, mapeie mentalmente os **eixos obrigatórios das Diretrizes** (`direcao`, `versiculo_chave`, `introducao` e cada bloco de `topicos`) — eles são a lista de conteúdo **inegociável** que deve sobreviver intacta até o final da Etapa 2.
 
@@ -52,12 +52,13 @@ Transforme integralmente o texto da aula em uma versão para leitura em voz alta
   3. **Corpo da Aula:** todos os tópicos na ordem original, preservando os títulos e todas as ideias.
   4. **O que ignorar no roteiro falado:** IGNORE `Ideia Central`, `Perguntas para reflexão`, `Perguntas para discussão` e `Tarefas de casa` (as 3 seções de fechamento serão copiadas automaticamente da apostila ao final do Google Doc pela ferramenta `publish_teleprompter`).
 
-## Checkpoint 1 (Git)
-1. Salve o roteiro completo da Etapa 1 com `write_file` em `{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md` (sempre 2 dígitos com zero à esquerda, ex.: `aula_07_teleprompter.md`).
-2. Valide se a chave GPG está destravada (`gpg-connect-agent 'keyinfo --list' /bye`). Se estiver, faça o commit da Etapa 1 usando `git -C` (NUNCA `cd ... &&`):
+## Checkpoint Local da Versão Longa (Git — Preservar Intacto)
+1. Salve o roteiro completo (versão longa) da Etapa 1 com `write_file` em `{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md` (sempre 2 dígitos com zero à esquerda, ex.: `aula_07_teleprompter.md`).
+2. Valide se a chave GPG está destravada (`gpg-connect-agent 'keyinfo --list' /bye`). Se estiver, faça o commit único usando `git -C` (NUNCA `cd ... &&`):
    ```bash
-   git -C "/mnt/c/Users/lplim/repos/revisao_ebd" add "{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md" && git -C "/mnt/c/Users/lplim/repos/revisao_ebd" commit -m "Curso [Nome do Curso] - Aula [XX] - versão teleprompter (completo)"
+   git -C "/mnt/c/Users/lplim/repos/revisao_ebd" add "{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md" && git -C "/mnt/c/Users/lplim/repos/revisao_ebd" commit -m "Curso [Nome do Curso] - Aula [XX] - versão teleprompter"
    ```
+3. **NUNCA sobrescreva** esse arquivo `.md` na Etapa 2 — ele deve permanecer sempre na versão longa completa.
 
 ---
 
@@ -104,25 +105,20 @@ Agora transforme o roteiro completo da Etapa 1 na **versão final de teleprompte
 
 ---
 
-# ETAPA FINAL — CHECKPOINT 2 (GIT) + PUBLICAÇÃO NO GOOGLE DOCS
+# ETAPA FINAL — PUBLICAÇÃO DA VERSÃO REDUZIDA NO GOOGLE DOCS
 
-1. **Sobrescreva o arquivo local** `{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md` com a versão reduzida final da Etapa 2 usando `write_file`.
-2. **Em paralelo, execute a publicação no Google Docs e o commit final:**
-   - Chame `ebd-google` → `publish_teleprompter`:
-     - `course`: `<curso>`
-     - `lesson_num`: `<N>`
-     - `title`: `title_full` retornado por `read_lesson` (ex.: `"Aula 07: ..."`)
-     - `teleprompter_paragraphs`: lista ordenada de parágrafos da versão reduzida final da Etapa 2 (incluindo abertura, `""`, `"(Oração)"`, `""`, os 3 parágrafos da introdução sem `[N]`, e para cada tópico: `""`, `"(TÍTULO EM CAIXA ALTA)"`, `[1] ...`, `[2] ...`, `[3] ...`, `[4] ...`).
-     - `source_tab`: `active_tab` retornado por `read_lesson`.
-   - Se a chave GPG estiver destravada, faça o commit da Etapa 2 usando `git -C`:
-     ```bash
-     git -C "/mnt/c/Users/lplim/repos/revisao_ebd" add "{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md" && git -C "/mnt/c/Users/lplim/repos/revisao_ebd" commit -m "Curso [Nome do Curso] - Aula [XX] - versão teleprompter (reduzido)"
-     ```
+- **NÃO altere nem sobrescreva** o arquivo `.md` local salvo na Etapa 1 (ele preserva a versão longa no Git).
+- Chame `ebd-google` → `publish_teleprompter` enviando a **versão reduzida final da Etapa 2**:
+  - `course`: `<curso>`
+  - `lesson_num`: `<N>`
+  - `title`: `title_full` retornado por `read_lesson` (ex.: `"Aula 07: ..."`)
+  - `teleprompter_paragraphs`: lista ordenada de parágrafos da versão reduzida final da Etapa 2 (incluindo abertura, `""`, `"(Oração)"`, `""`, os 3 parágrafos da introdução sem `[N]`, e para cada tópico: `""`, `"(TÍTULO EM CAIXA ALTA)"`, `[1] ...`, `[2] ...`, `[3] ...`, `[4] ...`).
+  - `source_tab`: `active_tab` retornado por `read_lesson`.
 
 ---
 
 # MENSAGEM FINAL AO USUÁRIO
 Responda de forma direta e concisa contendo:
-1. O caminho COMPLETO e ABSOLUTO do arquivo `.md` salvo em formato de texto puro (dentro de crases ou bloco de código, SEM formatar como link).
-2. Estatísticas rápidas da redução: palavras Etapa 1 (completo) → Etapa 2 (reduzido) e `%` reduzida, confirmando a estrutura final (`3` parágrafos na introdução + `4` blocos por tópico).
+1. O caminho COMPLETO e ABSOLUTO do arquivo `.md` (versão longa preservada) em formato de texto puro (dentro de crases ou bloco de código, SEM formatar como link).
+2. Estatísticas rápidas da redução aplicada no Google Doc: palavras Etapa 1 (`.md` completo) → Etapa 2 (Doc reduzido) e `%` reduzida, confirmando a estrutura final (`3` parágrafos na introdução + `4` blocos por tópico).
 3. A aba fonte utilizada da apostila (`Revisada` ou `Tmp`), o título e o link do Google Doc de teleprompter criado/atualizado no Drive.
