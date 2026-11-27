@@ -7,6 +7,7 @@ and delegates personal-Drive file duplication (`files.copy` for Teleprompter)
 to a lightweight Google Apps Script Web App configured in `apps_script_secret.json`.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -22,6 +23,7 @@ SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 CREDENTIALS_PATH = "/home/lp-lima/.gemini/skills/import-nubank-expenses/assets/credentials.json"
 COURSES_REGISTRY_PATH = "/mnt/c/Users/lplim/repos/revisao_ebd/cursos_registrados.json"
 APPS_SCRIPT_SECRET_PATH = os.path.join(SERVER_DIR, "apps_script_secret.json")
+DOWNLOADS_DIR = "/mnt/c/Users/lplim/Downloads"
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
@@ -854,22 +856,16 @@ def _build_rich_append_requests(
     dest_tab_id: str,
     insert_index: int,
     prepend_page_break: bool = False,
+    preserve_full_styles: bool = False,
 ) -> Tuple[List[Dict[str, Any]], int]:
     """
     Build Google Docs batchUpdate requests to append rich paragraphs (headings,
-    lists/bullets, bold/italic/underline/links) starting at `insert_index`.
+    lists/bullets, bold/italic/underline/links, and optionally full paragraph/font
+    formatting such as alignment, indentation, spacing, and fontSize) starting at
+    `insert_index`.
     """
     reqs: List[Dict[str, Any]] = []
     cur = insert_index
-
-    if prepend_page_break:
-        reqs.append(
-            {"insertPageBreak": {"location": {"index": cur, "tabId": dest_tab_id}}}
-        )
-        # insertPageBreak inserts 1 pageBreak + newline (2 UTF-16 units) when at end,
-        # or 1 pageBreak char. Using paragraphStyle.pageBreakBefore on the first
-        # paragraph is much cleaner and avoids index drift!
-        reqs.pop()
 
     # Extract clean paragraph specs
     para_specs = []
@@ -920,6 +916,7 @@ def _build_rich_append_requests(
                 "text": full_text,
                 "runs": runs,
                 "named_style": named_style,
+                "paragraph_style": ps,
                 "list_id": list_id,
                 "list_preset": list_preset,
             }
@@ -945,6 +942,25 @@ def _build_rich_append_requests(
         }
     )
 
+    p_override_keys = (
+        "alignment",
+        "direction",
+        "spaceAbove",
+        "spaceBelow",
+        "lineSpacing",
+        "spacingMode",
+        "indentFirstLine",
+        "indentStart",
+        "indentEnd",
+        "keepLinesTogether",
+        "keepWithNext",
+    )
+    t_style_keys = (
+        ("bold", "italic", "underline", "strikethrough", "link", "foregroundColor", "backgroundColor", "fontSize", "weightedFontFamily")
+        if preserve_full_styles
+        else ("bold", "italic", "underline", "strikethrough", "link", "foregroundColor")
+    )
+
     # Track paragraph ranges for paragraph styles, inline text styles, and list grouping
     p_cursor = cur
     list_runs: List[Tuple[int, int, str]] = []  # (start, end, preset)
@@ -955,6 +971,7 @@ def _build_rich_append_requests(
         p_start = p_cursor
         p_end = p_cursor + p_len
 
+        # 1. Apply namedStyleType first (resets defaults cleanly)
         p_style_obj: Dict[str, Any] = {"namedStyleType": sp["named_style"]}
         fields = ["namedStyleType"]
         if idx_p == 0 and prepend_page_break:
@@ -975,7 +992,34 @@ def _build_rich_append_requests(
             }
         )
 
-        # Inline text styles (reset bold/italic/underline/link cleanly only when explicitly set)
+        # 2. Apply explicit paragraph overrides (alignment, indents, spacing) when preserve_full_styles=True
+        if preserve_full_styles:
+            src_ps = sp["paragraph_style"]
+            ov_obj: Dict[str, Any] = {}
+            ov_fields: List[str] = []
+            for key in p_override_keys:
+                if key in src_ps:
+                    # Skip indent overrides on list items (bullets manage their own indent)
+                    if sp["list_id"] and key in ("indentFirstLine", "indentStart"):
+                        continue
+                    ov_obj[key] = src_ps[key]
+                    ov_fields.append(key)
+            if ov_fields:
+                reqs.append(
+                    {
+                        "updateParagraphStyle": {
+                            "range": {
+                                "startIndex": p_start,
+                                "endIndex": p_end,
+                                "tabId": dest_tab_id,
+                            },
+                            "paragraphStyle": ov_obj,
+                            "fields": ",".join(ov_fields),
+                        }
+                    }
+                )
+
+        # 3. Inline text styles
         r_cursor = p_start
         for content, ts in sp["runs"]:
             r_len = utf16_len(content)
@@ -986,7 +1030,7 @@ def _build_rich_append_requests(
                 continue
             style_update: Dict[str, Any] = {}
             t_fields: List[str] = []
-            for key in ("bold", "italic", "underline", "strikethrough", "link", "foregroundColor"):
+            for key in t_style_keys:
                 if key in ts:
                     style_update[key] = ts[key]
                     t_fields.append(key)
@@ -1005,7 +1049,7 @@ def _build_rich_append_requests(
                     }
                 )
 
-        # Group contiguous list items sharing the same list_id so numbering stays 1, 2, 3
+        # 4. Group contiguous list items sharing the same list_id so numbering stays 1, 2, 3
         if sp["list_id"] and sp["list_preset"]:
             if cur_list_group and cur_list_group[0] == sp["list_id"]:
                 cur_list_group = (
@@ -1442,6 +1486,206 @@ def tool_publish_teleprompter(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def tool_export_lesson_pdf(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Finaliza uma aula revisada em 4 passos atômicos:
+      1. Limpa todo o conteúdo da aba 'Tmp';
+      2. Copia a aula da aba 'Revisada' para a aba 'Tmp' preservando TODA a formatação;
+      3. Exporta a aba 'Tmp' como PDF para /mnt/c/Users/lplim/Downloads;
+      4. Carrega/atualiza o PDF na pasta irmã 'Aulas em PDF' do Google Drive com validação MD5.
+    """
+    course_key, course_info = resolve_course(args["course"])
+    lesson_num = int(args["lesson_num"])
+    downloads_dir = args.get("downloads_dir") or DOWNLOADS_DIR
+
+    doc_url = course_info.get("google_doc")
+    if not doc_url:
+        raise ValueError(f"O curso '{course_key}' não possui 'google_doc' configurado.")
+    doc_id = extract_doc_id(doc_url)
+    doc = fetch_doc(doc_id)
+
+    rev_tab = get_tab_by_title(doc, "Revisada")
+    tmp_tab = get_tab_by_title(doc, "Tmp")
+    if not rev_tab or not tmp_tab:
+        raise ValueError("Documento precisa possuir tanto a aba 'Revisada' quanto a aba 'Tmp'.")
+
+    rev_els = get_lesson_elements(rev_tab, "Revisada", lesson_num)
+    rev_lists = rev_tab.get("documentTab", {}).get("lists", {})
+
+    tmp_tab_id = tmp_tab["tabProperties"]["tabId"]
+    tmp_body = tmp_tab["documentTab"]["body"]["content"]
+    tmp_end = tmp_body[-1]["endIndex"]
+
+    s = get_session()
+
+    # Step 1: Clear Tmp tab completely (content + any residual bullets/styles)
+    clear_reqs: List[Dict[str, Any]] = []
+    if tmp_end > 2:
+        clear_reqs.append(
+            {
+                "deleteContentRange": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": tmp_end - 1,
+                        "tabId": tmp_tab_id,
+                    }
+                }
+            }
+        )
+    clear_reqs.append(
+        {
+            "deleteParagraphBullets": {
+                "range": {"startIndex": 1, "endIndex": 2, "tabId": tmp_tab_id}
+            }
+        }
+    )
+    clear_reqs.append(
+        {
+            "updateParagraphStyle": {
+                "range": {"startIndex": 1, "endIndex": 2, "tabId": tmp_tab_id},
+                "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                "fields": "namedStyleType",
+            }
+        }
+    )
+    r_clear = s.post(
+        f"https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate",
+        json={"requests": clear_reqs},
+    )
+    if r_clear.status_code != 200:
+        raise RuntimeError(f"Erro ao limpar aba 'Tmp' ({r_clear.status_code}): {r_clear.text}")
+
+    # Step 2: Copy full lesson from Revisada -> Tmp preserving ALL formatting
+    copy_reqs, _ = _build_rich_append_requests(
+        src_elements=rev_els,
+        src_lists=rev_lists,
+        dest_tab_id=tmp_tab_id,
+        insert_index=1,
+        prepend_page_break=False,
+        preserve_full_styles=True,
+    )
+    if not copy_reqs:
+        raise RuntimeError(f"Nenhum conteúdo encontrado na Aula {lesson_num:02d} da aba 'Revisada'.")
+
+    r_copy = s.post(
+        f"https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate",
+        json={"requests": copy_reqs},
+    )
+    if r_copy.status_code != 200:
+        raise RuntimeError(
+            f"Erro ao copiar Aula {lesson_num:02d} para a aba 'Tmp' ({r_copy.status_code}): {r_copy.text}"
+        )
+
+    # Step 3: Export Tmp tab as PDF to Downloads folder
+    pdf_folder = find_sibling_folder(doc_id, "pdf")
+    existing_pdfs = list_drive_children(pdf_folder["id"], mime_type="application/pdf")
+
+    # Derive canonical PDF filename matching existing files in Aulas em PDF (or Apostila title)
+    suffix = None
+    for f in existing_pdfs:
+        m_suf = re.match(r"^Aula\s+\d+\s*(-\s*.+?\.pdf)$", f["name"], re.IGNORECASE)
+        if m_suf:
+            suffix = m_suf.group(1)
+            break
+    if not suffix:
+        clean_course = re.sub(
+            r"^Apostila\s*[-–:]\s*", "", doc.get("title", course_key), flags=re.IGNORECASE
+        ).strip()
+        suffix = f"- {clean_course}.pdf"
+    pdf_filename = f"Aula {lesson_num:02d} {suffix}"
+
+    export_url = f"https://docs.google.com/document/d/{doc_id}/export?format=pdf&tab={tmp_tab_id}"
+    exp_resp = s.get(export_url)
+    if exp_resp.status_code != 200 or not exp_resp.content.startswith(b"%PDF"):
+        raise RuntimeError(
+            f"Erro ao exportar aba 'Tmp' como PDF ({exp_resp.status_code}, "
+            f"Content-Type={exp_resp.headers.get('Content-Type')}): {exp_resp.text[:300]}"
+        )
+
+    pdf_bytes = exp_resp.content
+    local_md5 = hashlib.md5(pdf_bytes).hexdigest()
+    est_pages = len(re.findall(rb"/Type\s*/Page\b", pdf_bytes))
+
+    os.makedirs(downloads_dir, exist_ok=True)
+    local_pdf_path = os.path.join(downloads_dir, pdf_filename)
+    with open(local_pdf_path, "wb") as f:
+        f.write(pdf_bytes)
+
+    # Step 4: Upload (or update in-place) PDF in Drive folder 'Aulas em PDF'
+    existing_target = next(
+        (
+            f
+            for f in existing_pdfs
+            if norm_key(f["name"]) == norm_key(pdf_filename)
+            or re.match(rf"^Aula\s+0*{lesson_num}\b", f["name"], re.IGNORECASE)
+        ),
+        None,
+    )
+
+    updated_existing = False
+    created_temp_id = None
+
+    if existing_target:
+        target_file_id = existing_target["id"]
+        updated_existing = True
+    else:
+        if not existing_pdfs:
+            raise RuntimeError(
+                f"A pasta '{pdf_folder['name']}' no Drive não possui nenhum PDF modelo para duplicar via Apps Script. "
+                f"O PDF já foi salvo em {local_pdf_path}; suba o primeiro PDF do curso manualmente uma única vez."
+            )
+        # Pick highest-index existing PDF as template slot owned by personal account
+        existing_pdfs_sorted = sorted(existing_pdfs, key=lambda x: x["name"], reverse=True)
+        template_pdf = existing_pdfs_sorted[0]
+        copy_res = _duplicate_file_via_apps_script(
+            template_file_id=template_pdf["id"],
+            folder_id=pdf_folder["id"],
+            new_name=pdf_filename,
+        )
+        target_file_id = copy_res["id"]
+        created_temp_id = target_file_id
+
+    patch_resp = s.patch(
+        f"https://www.googleapis.com/upload/drive/v3/files/{target_file_id}"
+        "?uploadType=media&fields=id,name,size,md5Checksum,webViewLink",
+        headers={"Content-Type": "application/pdf"},
+        data=pdf_bytes,
+    )
+    if patch_resp.status_code != 200:
+        if created_temp_id:
+            s.patch(
+                f"https://www.googleapis.com/drive/v3/files/{created_temp_id}",
+                json={"trashed": True},
+            )
+        raise RuntimeError(
+            f"Erro ao gravar bytes do PDF no Drive ({patch_resp.status_code}): {patch_resp.text}"
+        )
+
+    meta = patch_resp.json()
+    if int(meta.get("size", -1)) != len(pdf_bytes) or meta.get("md5Checksum") != local_md5:
+        raise RuntimeError(
+            f"Falha de integridade no upload do PDF: esperado size={len(pdf_bytes)} md5={local_md5}, "
+            f"recebido {meta}"
+        )
+
+    return {
+        "status": "ok",
+        "course": course_key,
+        "lesson_num": lesson_num,
+        "pdf_filename": pdf_filename,
+        "local_pdf_path": local_pdf_path,
+        "bytes": len(pdf_bytes),
+        "estimated_pages": est_pages,
+        "md5": local_md5,
+        "updated_existing": updated_existing,
+        "drive_file_id": meta["id"],
+        "drive_file_url": meta.get("webViewLink") or f"https://drive.google.com/file/d/{meta['id']}/view",
+        "drive_folder_name": pdf_folder["name"],
+        "drive_folder_url": f"https://drive.google.com/drive/folders/{pdf_folder['id']}",
+        "tmp_tab_url": f"https://docs.google.com/document/d/{doc_id}/edit?tab={tmp_tab_id}",
+    }
+
+
 # ---------------------------------------------------------------------------
 # MCP Schema & JSON-RPC 2.0 Stdio Loop
 # ---------------------------------------------------------------------------
@@ -1569,6 +1813,26 @@ TOOLS_SCHEMA = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "export_lesson_pdf",
+        "description": (
+            "Finaliza e publica o PDF de uma aula revisada em 1 única chamada (sem prompts): "
+            "(1) limpa todo o conteúdo da aba 'Tmp'; "
+            "(2) copia a aula completa da aba 'Revisada' para a aba 'Tmp' preservando 100% da formatação; "
+            "(3) baixa a aba 'Tmp' como PDF para /mnt/c/Users/lplim/Downloads; "
+            "(4) carrega/atualiza o PDF na pasta 'Aulas em PDF' do curso no Google Drive com verificação MD5."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "course": {"type": "string", "description": "Nome do curso (ex.: 'jornada batista', 'filipenses', 'profetas menores')."},
+                "lesson_num": {"type": "integer", "description": "Número inteiro da aula a exportar (ex.: 7)."},
+                "downloads_dir": {"type": "string", "description": "Opcional: pasta local de destino do PDF (padrão: /mnt/c/Users/lplim/Downloads)."},
+            },
+            "required": ["course", "lesson_num"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 TOOL_HANDLERS = {
@@ -1578,6 +1842,7 @@ TOOL_HANDLERS = {
     "apply_lesson_edits": tool_apply_lesson_edits,
     "promote_tmp_to_revisada": tool_promote_tmp_to_revisada,
     "publish_teleprompter": tool_publish_teleprompter,
+    "export_lesson_pdf": tool_export_lesson_pdf,
 }
 
 

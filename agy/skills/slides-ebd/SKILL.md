@@ -108,7 +108,13 @@ Abra **uma única transação de edição** na nova cópia via `read-design` (`o
 Aplique as alterações página a página usando `edit-design` com `finalize: "keep_open"` (agrupando todas as operações de cada slide em uma única chamada por slide sempre que possível).
 
 ### Mapeamento Slide a Slide (Padrão EBD — 1920×1080)
-- **Slides fixos (NÃO alterar):** Capa EBD (Slide 1), Capa do Curso (Slide 2), Ementa (Slide 3), `Espaço para perguntas`, `Período de DISCUSSÃO` e Capa final EBD.
+- **Slides fixos (NÃO alterar):** Capa EBD (Slide 1), Capa do Curso (Slide 2), `Espaço para perguntas`, `Período de DISCUSSÃO` e Capa final EBD.
+- **Ementa / Índice (geralmente Slide 3):**
+  - Mova o destaque em **negrito** da aula anterior (`Aula NN`) para a aula atual (`Aula XX`), mantendo todas as demais aulas em peso `normal`.
+  - *Técnica no Canva MCP (`find_and_replace_text` preserva o `fontWeight` de cada `textRegion`):*
+    1. Remova a linha `normal` da aula atual (`"\nAula XX: ..."` → `""`).
+    2. Substitua o conteúdo da `textRegion` em negrito (`"Aula NN: ..."`) pela linha da aula atual (`"Aula XX: ..."`).
+    3. Reinsira a linha da aula anterior (`"Aula NN: ..."`) na `textRegion` `normal` adjacente (ex.: logo após a aula `NN-1`), mantendo a ordem correta da ementa.
 - **Capa da Aula (geralmente Slide 4):**
   - Atualize o texto `Aula NN` para `Aula XX`.
   - Atualize o texto `Tema: ...` para `Tema: [campo theme retornado por read_lesson]`.
