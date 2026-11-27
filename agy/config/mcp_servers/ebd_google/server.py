@@ -694,7 +694,7 @@ def tool_apply_lesson_edits(args: Dict[str, Any]) -> Dict[str, Any]:
     lesson_num = int(args["lesson_num"])
     replacements = args.get("replacements") or []
     requested_tab = args.get("tab", "auto")
-    update_local_md = bool(args.get("update_local_md", True))
+    update_local_md = bool(args.get("update_local_md", False))
 
     doc_url = course_info.get("google_doc")
     if not doc_url:
@@ -1506,7 +1506,7 @@ TOOLS_SCHEMA = [
                 "course": {"type": "string", "description": "Nome do curso."},
                 "lesson_num": {"type": "integer", "description": "Número inteiro da aula."},
                 "tab": {"type": "string", "description": "'auto' (padrão), 'Revisada' ou 'Tmp'.", "default": "auto"},
-                "update_local_md": {"type": "boolean", "description": "Se true (padrão), atualiza o .md local após editar o Google Doc.", "default": True},
+                "update_local_md": {"type": "boolean", "description": "Se true, atualiza o .md local após editar o Google Doc. Padrão: false.", "default": False},
                 "replacements": {
                     "type": "array",
                     "description": "Lista de substituições exatas de texto a aplicar apenas dentro do intervalo desta aula.",
