@@ -1248,11 +1248,190 @@ def _extract_closing_sections_from_apostila(
     return out
 
 
+def _populate_teleprompter_tab(
+    s: AuthorizedSession,
+    doc_id: str,
+    tab: Dict[str, Any],
+    title: str,
+    paragraphs: List[str],
+    closing_els: Optional[List[Dict[str, Any]]] = None,
+    src_lists: Optional[Dict[str, Any]] = None,
+    preserve_existing_title_style: bool = True,
+) -> None:
+    """Clear a teleprompter tab, write HEADING_1 title + NORMAL_TEXT paragraphs (+ optional closing sections)."""
+    tab_id = tab["tabProperties"]["tabId"]
+    body = tab["documentTab"]["body"]["content"]
+    first_para = next((el for el in body if "paragraph" in el), None)
+    if not first_para:
+        raise RuntimeError(f"Aba '{tab['tabProperties'].get('title')}' sem parágrafo inicial.")
+
+    title_start = first_para["startIndex"]
+    title_end = first_para["endIndex"]
+    doc_end = body[-1]["endIndex"]
+
+    prep_reqs: List[Dict[str, Any]] = []
+    if doc_end - 1 > title_end:
+        prep_reqs.append(
+            {
+                "deleteContentRange": {
+                    "range": {
+                        "startIndex": title_end,
+                        "endIndex": doc_end - 1,
+                        "tabId": tab_id,
+                    }
+                }
+            }
+        )
+
+    old_title_len = (title_end - 1) - title_start
+    title_u16 = utf16_len(title)
+    if preserve_existing_title_style and old_title_len >= 1:
+        prep_reqs.append(
+            {
+                "insertText": {
+                    "location": {"index": title_start + 1, "tabId": tab_id},
+                    "text": title,
+                }
+            }
+        )
+        if old_title_len > 1:
+            prep_reqs.append(
+                {
+                    "deleteContentRange": {
+                        "range": {
+                            "startIndex": title_start + 1 + title_u16,
+                            "endIndex": title_start + old_title_len + title_u16,
+                            "tabId": tab_id,
+                        }
+                    }
+                }
+            )
+        prep_reqs.append(
+            {
+                "deleteContentRange": {
+                    "range": {
+                        "startIndex": title_start,
+                        "endIndex": title_start + 1,
+                        "tabId": tab_id,
+                    }
+                }
+            }
+        )
+    else:
+        if old_title_len > 0:
+            prep_reqs.append(
+                {
+                    "deleteContentRange": {
+                        "range": {
+                            "startIndex": title_start,
+                            "endIndex": title_end - 1,
+                            "tabId": tab_id,
+                        }
+                    }
+                }
+            )
+        prep_reqs.append(
+            {
+                "insertText": {
+                    "location": {"index": title_start, "tabId": tab_id},
+                    "text": title,
+                }
+            }
+        )
+        prep_reqs.append(
+            {
+                "updateParagraphStyle": {
+                    "range": {
+                        "startIndex": title_start,
+                        "endIndex": title_start + title_u16 + 1,
+                        "tabId": tab_id,
+                    },
+                    "paragraphStyle": {"namedStyleType": "HEADING_1"},
+                    "fields": "namedStyleType",
+                }
+            }
+        )
+
+    r1 = s.post(
+        f"https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate",
+        json={"requests": prep_reqs},
+    )
+    if r1.status_code != 200:
+        raise RuntimeError(
+            f"Erro ao preparar título/corpo da aba '{tab['tabProperties'].get('title')}' ({r1.status_code}): {r1.text}"
+        )
+
+    # Re-fetch exact endIndex after title update, then insert body (+ optional closing sections)
+    doc2 = fetch_doc(doc_id)
+    fresh_tab = next(
+        (t for t in doc2.get("tabs", []) if t["tabProperties"]["tabId"] == tab_id), None
+    )
+    if not fresh_tab:
+        raise RuntimeError(f"Aba {tab_id} não encontrada após atualização do título.")
+    body2 = fresh_tab["documentTab"]["body"]["content"]
+    insert_at = max(1, body2[-1]["endIndex"] - 1)
+
+    body_lines = ["", *[p.rstrip("\n") for p in paragraphs], "", ""]
+    tp_text = "\n".join(body_lines) + "\n"
+    tp_u16 = utf16_len(tp_text)
+
+    fill_reqs: List[Dict[str, Any]] = [
+        {
+            "insertText": {
+                "location": {"index": insert_at, "tabId": tab_id},
+                "text": tp_text,
+            }
+        },
+        {
+            "updateParagraphStyle": {
+                "range": {
+                    "startIndex": insert_at,
+                    "endIndex": insert_at + tp_u16,
+                    "tabId": tab_id,
+                },
+                "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                "fields": "namedStyleType",
+            }
+        },
+        {
+            "updateTextStyle": {
+                "range": {
+                    "startIndex": insert_at,
+                    "endIndex": insert_at + tp_u16,
+                    "tabId": tab_id,
+                },
+                "textStyle": {"bold": False, "italic": False},
+                "fields": "bold,italic",
+            }
+        },
+    ]
+
+    if closing_els:
+        closing_reqs, _ = _build_rich_append_requests(
+            src_elements=closing_els,
+            src_lists=src_lists or {},
+            dest_tab_id=tab_id,
+            insert_index=insert_at + tp_u16,
+            prepend_page_break=False,
+        )
+        fill_reqs.extend(closing_reqs)
+
+    r2 = s.post(
+        f"https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate",
+        json={"requests": fill_reqs},
+    )
+    if r2.status_code != 200:
+        raise RuntimeError(
+            f"Erro ao preencher corpo da aba '{tab['tabProperties'].get('title')}' ({r2.status_code}): {r2.text}"
+        )
+
+
 def tool_publish_teleprompter(args: Dict[str, Any]) -> Dict[str, Any]:
     course_key, course_info = resolve_course(args["course"])
     lesson_num = int(args["lesson_num"])
     title = (args.get("title") or "").strip()
     teleprompter_paragraphs = args.get("teleprompter_paragraphs") or []
+    original_paragraphs = args.get("original_paragraphs") or []
     source_tab_req = args.get("source_tab", "auto")
     target_doc_id = (args.get("target_doc_id") or "").strip()
 
@@ -1308,7 +1487,7 @@ def tool_publish_teleprompter(args: Dict[str, Any]) -> Dict[str, Any]:
                     f"Nenhum arquivo de teleprompter no padrão 'Aula NN' encontrado em '{tp_folder['name']}'."
                 )
             indexed_docs.sort(key=lambda x: x[0], reverse=True)
-            highest_num, template_doc = indexed_docs[0]
+            _highest_num, template_doc = indexed_docs[0]
             new_name = re.sub(
                 r"(Aula\s+)0*\d+\b",
                 lambda m: f"{m.group(1)}{lesson_num:02d}",
@@ -1325,150 +1504,109 @@ def tool_publish_teleprompter(args: Dict[str, Any]) -> Dict[str, Any]:
             doc_name = copy_res.get("name", new_name)
             created_new = True
 
-    # 3. Read target Teleprompter Doc and rebuild content preserving HEADING_1 title style
+    # 3. Ensure tabs exist with canonical names & emojis:
+    #    Tab 0: "Revisada" ("✅") -> reduced teleprompter + closing sections
+    #    Tab 1: "Original" ("✍🏽") -> long/full teleprompter (when original_paragraphs provided)
+    s = get_session()
     tp_doc = fetch_doc(tp_doc_id)
     doc_name = doc_name or tp_doc.get("title", "")
-    tp_tab = tp_doc["tabs"][0]
-    tp_tab_id = tp_tab["tabProperties"]["tabId"]
-    tp_body = tp_tab["documentTab"]["body"]["content"]
 
-    first_para = next((el for el in tp_body if "paragraph" in el), None)
-    if not first_para:
-        raise RuntimeError(f"Documento de teleprompter {tp_doc_id} está sem parágrafo inicial.")
+    rev_tab = get_tab_by_title(tp_doc, "Revisada") or tp_doc["tabs"][0]
+    rev_tab_id = rev_tab["tabProperties"]["tabId"]
+    orig_tab = get_tab_by_title(tp_doc, "Original")
 
-    title_start = first_para["startIndex"]
-    title_end = first_para["endIndex"]  # includes trailing \n
-    doc_end = tp_body[-1]["endIndex"]
-
-    # Step 3a: Delete everything below the title paragraph, then replace title text preserving formatting
-    prep_reqs: List[Dict[str, Any]] = []
-    if doc_end - 1 > title_end:
-        prep_reqs.append(
+    tab_meta_reqs: List[Dict[str, Any]] = []
+    rev_props = rev_tab.get("tabProperties", {})
+    if rev_props.get("title") != "Revisada" or rev_props.get("iconEmoji") != "✅":
+        tab_meta_reqs.append(
             {
-                "deleteContentRange": {
-                    "range": {
-                        "startIndex": title_end,
-                        "endIndex": doc_end - 1,
-                        "tabId": tp_tab_id,
-                    }
+                "updateDocumentTabProperties": {
+                    "tabProperties": {
+                        "tabId": rev_tab_id,
+                        "title": "Revisada",
+                        "iconEmoji": "✅",
+                    },
+                    "fields": "title,iconEmoji",
                 }
             }
         )
 
-    old_title_len = (title_end - 1) - title_start
-    title_u16 = utf16_len(title)
-    if old_title_len >= 1:
-        # Insert at title_start + 1 to inherit exact HEADING_1 character styling
-        prep_reqs.append(
-            {
-                "insertText": {
-                    "location": {"index": title_start + 1, "tabId": tp_tab_id},
-                    "text": title,
-                }
-            }
-        )
-        if old_title_len > 1:
-            prep_reqs.append(
+    added_orig_tab = False
+    if original_paragraphs:
+        if orig_tab is None:
+            tab_meta_reqs.append(
                 {
-                    "deleteContentRange": {
-                        "range": {
-                            "startIndex": title_start + 1 + title_u16,
-                            "endIndex": title_start + old_title_len + title_u16,
-                            "tabId": tp_tab_id,
+                    "addDocumentTab": {
+                        "tabProperties": {
+                            "title": "Original",
+                            "iconEmoji": "✍🏽",
+                            "index": 1,
                         }
                     }
                 }
             )
-        prep_reqs.append(
-            {
-                "deleteContentRange": {
-                    "range": {
-                        "startIndex": title_start,
-                        "endIndex": title_start + 1,
-                        "tabId": tp_tab_id,
+            added_orig_tab = True
+        else:
+            orig_props = orig_tab.get("tabProperties", {})
+            if orig_props.get("title") != "Original" or orig_props.get("iconEmoji") != "✍🏽":
+                tab_meta_reqs.append(
+                    {
+                        "updateDocumentTabProperties": {
+                            "tabProperties": {
+                                "tabId": orig_props["tabId"],
+                                "title": "Original",
+                                "iconEmoji": "✍🏽",
+                            },
+                            "fields": "title,iconEmoji",
+                        }
                     }
-                }
-            }
-        )
-    else:
-        prep_reqs.append(
-            {
-                "insertText": {
-                    "location": {"index": title_start, "tabId": tp_tab_id},
-                    "text": title,
-                }
-            }
-        )
+                )
 
-    s = get_session()
-    r1 = s.post(
-        f"https://docs.googleapis.com/v1/documents/{tp_doc_id}:batchUpdate",
-        json={"requests": prep_reqs},
+    if tab_meta_reqs:
+        r_meta = s.post(
+            f"https://docs.googleapis.com/v1/documents/{tp_doc_id}:batchUpdate",
+            json={"requests": tab_meta_reqs},
+        )
+        if r_meta.status_code != 200:
+            raise RuntimeError(
+                f"Erro ao configurar abas Revisada/Original no Teleprompter ({r_meta.status_code}): {r_meta.text}"
+            )
+        tp_doc = fetch_doc(tp_doc_id)
+        rev_tab = get_tab_by_title(tp_doc, "Revisada") or tp_doc["tabs"][0]
+        rev_tab_id = rev_tab["tabProperties"]["tabId"]
+        orig_tab = get_tab_by_title(tp_doc, "Original")
+
+    # 4. Populate Revisada tab (reduced version + Ideia Central / Reflexão / Tarefas)
+    _populate_teleprompter_tab(
+        s=s,
+        doc_id=tp_doc_id,
+        tab=rev_tab,
+        title=title,
+        paragraphs=teleprompter_paragraphs,
+        closing_els=closing_els,
+        src_lists=src_lists,
+        preserve_existing_title_style=True,
     )
-    if r1.status_code != 200:
-        raise RuntimeError(
-            f"Erro ao preparar título/corpo do Teleprompter ({r1.status_code}): {r1.text}"
+
+    # 5. Populate Original tab (long version) when provided
+    orig_tab_id = None
+    if original_paragraphs and orig_tab is not None:
+        orig_tab_id = orig_tab["tabProperties"]["tabId"]
+        # Re-fetch fresh orig_tab before writing
+        tp_doc_fresh = fetch_doc(tp_doc_id)
+        orig_tab_fresh = next(
+            (t for t in tp_doc_fresh.get("tabs", []) if t["tabProperties"]["tabId"] == orig_tab_id),
+            orig_tab,
         )
-
-    # Step 3b: Re-fetch to get exact endIndex after title update, then insert teleprompter body + closing sections
-    tp_doc2 = fetch_doc(tp_doc_id)
-    tp_body2 = tp_doc2["tabs"][0]["documentTab"]["body"]["content"]
-    insert_at = max(1, tp_body2[-1]["endIndex"] - 1)
-
-    # Build teleprompter body text: leading blank line + paragraphs + trailing blank lines
-    body_lines = ["", *[p.rstrip("\n") for p in teleprompter_paragraphs], "", ""]
-    tp_text = "\n".join(body_lines) + "\n"
-    tp_u16 = utf16_len(tp_text)
-
-    fill_reqs: List[Dict[str, Any]] = [
-        {
-            "insertText": {
-                "location": {"index": insert_at, "tabId": tp_tab_id},
-                "text": tp_text,
-            }
-        },
-        {
-            "updateParagraphStyle": {
-                "range": {
-                    "startIndex": insert_at,
-                    "endIndex": insert_at + tp_u16,
-                    "tabId": tp_tab_id,
-                },
-                "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
-                "fields": "namedStyleType",
-            }
-        },
-        {
-            "updateTextStyle": {
-                "range": {
-                    "startIndex": insert_at,
-                    "endIndex": insert_at + tp_u16,
-                    "tabId": tp_tab_id,
-                },
-                "textStyle": {"bold": False, "italic": False},
-                "fields": "bold,italic",
-            }
-        },
-    ]
-
-    # Append Ideia Central, Perguntas para reflexão, and Tarefas de casa verbatim with rich formatting
-    if closing_els:
-        closing_reqs, _ = _build_rich_append_requests(
-            src_elements=closing_els,
-            src_lists=src_lists,
-            dest_tab_id=tp_tab_id,
-            insert_index=insert_at + tp_u16,
-            prepend_page_break=False,
-        )
-        fill_reqs.extend(closing_reqs)
-
-    r2 = s.post(
-        f"https://docs.googleapis.com/v1/documents/{tp_doc_id}:batchUpdate",
-        json={"requests": fill_reqs},
-    )
-    if r2.status_code != 200:
-        raise RuntimeError(
-            f"Erro ao preencher corpo do Teleprompter ({r2.status_code}): {r2.text}"
+        _populate_teleprompter_tab(
+            s=s,
+            doc_id=tp_doc_id,
+            tab=orig_tab_fresh,
+            title=title,
+            paragraphs=original_paragraphs,
+            closing_els=None,
+            src_lists=None,
+            preserve_existing_title_style=not added_orig_tab,
         )
 
     return {
@@ -1480,8 +1618,15 @@ def tool_publish_teleprompter(args: Dict[str, Any]) -> Dict[str, Any]:
         "created_new": created_new,
         "doc_id": tp_doc_id,
         "doc_title": doc_name,
-        "doc_url": f"https://docs.google.com/document/d/{tp_doc_id}/edit",
-        "teleprompter_paragraphs_count": len(teleprompter_paragraphs),
+        "doc_url": f"https://docs.google.com/document/d/{tp_doc_id}/edit?tab={rev_tab_id}",
+        "revisada_tab_url": f"https://docs.google.com/document/d/{tp_doc_id}/edit?tab={rev_tab_id}",
+        "original_tab_url": (
+            f"https://docs.google.com/document/d/{tp_doc_id}/edit?tab={orig_tab_id}"
+            if orig_tab_id
+            else None
+        ),
+        "revisada_paragraphs_count": len(teleprompter_paragraphs),
+        "original_paragraphs_count": len(original_paragraphs),
         "closing_sections_copied": bool(closing_els),
     }
 
@@ -1791,9 +1936,10 @@ TOOLS_SCHEMA = [
         "name": "publish_teleprompter",
         "description": (
             "Cria (duplicando o arquivo de maior índice na pasta irmã 'Textos para teleprompter' via Apps Script) ou atualiza "
-            "o Google Doc de teleprompter da aula: atualiza o título HEADING_1 preservando formatação, substitui o corpo pelos "
-            "parágrafos de teleprompter fornecidos e anexa ao final 'Ideia Central', 'Perguntas para reflexão' e 'Tarefas de casa' "
-            "copiados integralmente da aba fonte da apostila."
+            "o Google Doc de teleprompter da aula com duas abas padronizadas: "
+            "(1) primeira aba 'Revisada' (emoji ✅) com a versão reduzida final + 'Ideia Central', 'Perguntas para reflexão' e "
+            "'Tarefas de casa' copiados integralmente da apostila; "
+            "(2) segunda aba 'Original' (emoji ✍🏽) com a versão longa/completa (quando original_paragraphs for informado)."
         ),
         "inputSchema": {
             "type": "object",
@@ -1803,7 +1949,12 @@ TOOLS_SCHEMA = [
                 "title": {"type": "string", "description": "Título da aula (HEADING_1) a gravar no topo. Se omitido, usa o da apostila."},
                 "teleprompter_paragraphs": {
                     "type": "array",
-                    "description": "Lista ordenada de parágrafos do roteiro de teleprompter (use string vazia '' para linhas em branco, ex.: pausa de oração).",
+                    "description": "Lista ordenada de parágrafos da versão REDUZIDA (Etapa 2) para a 1ª aba 'Revisada' (✅).",
+                    "items": {"type": "string"},
+                },
+                "original_paragraphs": {
+                    "type": "array",
+                    "description": "Lista ordenada de parágrafos da versão LONGA/COMPLETA (Etapa 1) para a 2ª aba 'Original' (✍🏽).",
                     "items": {"type": "string"},
                 },
                 "source_tab": {"type": "string", "description": "'auto' (padrão), 'Revisada' ou 'Tmp' para buscar Ideia Central/Reflexão/Tarefas.", "default": "auto"},

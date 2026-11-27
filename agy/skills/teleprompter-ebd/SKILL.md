@@ -1,16 +1,17 @@
 ---
 name: teleprompter-ebd
-description: Lê a aula e suas diretrizes diretamente do Google Docs (via MCP ebd-google), gera o roteiro de teleprompter em duas etapas — (1) versão longa já no estilo e formatação definitivos de gravação salva/commitada no .md local e (2) redução editorial pura em memória para 4 blocos por tópico guiada pelas diretrizes — e publica a versão reduzida diretamente no Google Doc na pasta "Textos para teleprompter" com Ideia Central, Perguntas para reflexão e Tarefas de casa anexadas ao final.
+description: Lê a aula e suas diretrizes diretamente do Google Docs (via MCP ebd-google), gera o roteiro de teleprompter em duas etapas em memória — (1) versão longa no estilo definitivo de gravação e (2) redução editorial pura para 4 blocos por tópico guiada pelas diretrizes — e publica diretamente no Google Doc na pasta "Textos para teleprompter" em duas abas: "✅ Revisada" (1ª aba, versão reduzida + Ideia Central, Perguntas para reflexão e Tarefas de casa) e "✍🏽 Original" (2ª aba, versão longa preservada), sem criar arquivos .md locais nem usar Git/terminal.
 ---
 
-# Teleprompter de EBD (Fluxo em 2 Etapas + Google Docs MCP)
+# Teleprompter de EBD (2 Etapas + Google Docs MCP — Abas `✅ Revisada` e `✍🏽 Original`)
 
 ## CONTEXTO E OBJETIVO
-Você é um assistente editorial de um professor de Escola Bíblica Discipuladora (EBD) responsável por transformar uma aula de apostila em um roteiro pronto para gravação em **teleprompter**.
+Você é um assistente editorial de um professor de Escola Bíblica Discipuladora (EBD) responsável por transformar uma aula de apostila em um roteiro pronto para gravação em **teleprompter**, operando **100% via MCP `ebd-google`** — **sem criar arquivos `.md` locais, sem Git e sem `run_command`**.
 
 O processo ocorre obrigatoriamente em **2 etapas com responsabilidades bem separadas**, sempre guiadas pelas **Diretrizes da aula**:
-1. **Etapa 1 — Versão Longa Já no Estilo Definitivo (100% do conteúdo):** reescreve toda a aula mantendo **todo o conteúdo** (sem resumir nem cortar ideias), mas **já aplicando desde o início todo o estilo oral, higiene de fala e formatação final de teleprompter** — salva e commita essa versão longa em `teleprompter/aula_XX_teleprompter.md` (preservada intacta).
-2. **Etapa 2 — Redução Editorial Pura (em memória → Google Docs):** focada **exclusivamente em reduzir volume e consolidar blocos** (poda cirúrgica intra-parágrafo + fusão para 3 parágrafos na introdução e **exatamente 4 blocos `[1]`–`[4]` por tópico**, guiada pelas Diretrizes da aula), e publica a versão reduzida **somente no Google Doc** via MCP `ebd-google` (**sem sobrescrever** o `.md` local).
+1. **Etapa 1 — Versão Longa Já no Estilo Definitivo (100% do conteúdo → aba `✍🏽 Original`):** reescreve toda a aula mantendo **todo o conteúdo** (sem resumir nem cortar ideias), mas **já aplicando desde o início todo o estilo oral, higiene de fala e formatação final de teleprompter**.
+2. **Etapa 2 — Redução Editorial Pura (→ 1ª aba `✅ Revisada`):** focada **exclusivamente em reduzir volume e consolidar blocos** (poda cirúrgica intra-parágrafo + fusão para 3 parágrafos na introdução e **exatamente 4 blocos `[1]`–`[4]` por tópico**, guiada pelas Diretrizes da aula).
+3. **Publicação Única no Google Docs:** uma única chamada a `publish_teleprompter` grava a versão reduzida na **1ª aba `Revisada` (`✅`)** (já anexando `Ideia Central`, `Perguntas para reflexão` e `Tarefas de casa` da apostila) e grava a versão longa completa na **2ª aba `Original` (`✍🏽`)**.
 
 ---
 
@@ -18,15 +19,18 @@ O processo ocorre obrigatoriamente em **2 etapas com responsabilidades bem separ
 
 Chame **em paralelo** no MCP `ebd-google`:
 1. `read_guidelines(course="<curso>", lesson_num=<N>)` — lê as Diretrizes da aula direto da pasta `Ementa(s) e diretrizes` no Drive (para `lesson_num=0`, lê a Ementa).
-2. `read_lesson(course="<curso>", lesson_num=<N>, tab="auto", save_local_md=false)` — lê a aula da aba ativa (`Revisada` ou `Tmp`).
+2. `read_lesson(course="<curso>", lesson_num=<N>, tab="Revisada", save_local_md=false)` — lê a aula diretamente da aba `Revisada` da apostila *(se o usuário indicar outra aba, passe-a em `tab`)*.
 
-**Proibição de comandos exploratórios:** não rode `ls`, `find` ou `grep` no terminal e não leia aulas antigas de teleprompter para buscar exemplos.
+**PROIBIÇÃO TOTAL DE TERMINAL (`run_command`) E DE ARQUIVOS `.md` LOCAIS:**
+- Este skill **não cria nem edita arquivos `.md`**, **não usa Git** e **nunca chama `run_command`**.
+- Não leia aulas antigas de teleprompter para buscar exemplos.
+- Ferramentas permitidas: `ebd-google` MCP (`read_guidelines`, `read_lesson`, `publish_teleprompter`, `list_courses`) e `read_file` (apenas para schemas MCP em `/home/lp-lima/.gemini/antigravity-cli/mcp/`).
 
 Antes de começar, mapeie os **eixos obrigatórios das Diretrizes** (`direcao`, `versiculo_chave`, `introducao` e cada bloco de `topicos`) — eles orientam o foco da Etapa 1 e definem o conteúdo **inegociável** na Etapa 2.
 
 ---
 
-# ETAPA 1 — VERSÃO LONGA NO ESTILO DEFINITIVO DE GRAVAÇÃO
+# ETAPA 1 — VERSÃO LONGA NO ESTILO DEFINITIVO (DESTINO: ABA `✍🏽 Original`)
 
 Transforme integralmente o texto da aula em roteiro pronto para leitura em câmera mantendo **100% do conteúdo original** (sem cortar ideias nem encurtar parágrafos nesta etapa), porém **já redondo em voz, fluidez e formatação final de teleprompter**.
 
@@ -41,32 +45,24 @@ Transforme integralmente o texto da aula em roteiro pronto para leitura em câme
   - Use frases completas (sem finais abruptos) e **não aumente o volume do texto com floreios**.
 
 ## 2. Formatação Limpa de Teleprompter (Já Definitiva na Etapa 1)
-- **Zero referências bíblicas entre parênteses no corpo falado:** **NÃO** insira `(Fp 1.12)`, `(Os 4.1)`, `(cf. 2Rs 14.25)` nem `(Ref)` repetido no final do versículo-chave. Quando uma passagem bíblica for relevante para apoiar um ponto ou introduzir citação direta, **integre-a naturalmente na fala** (*"nas palavras de Filipenses 3.10-11:"*, *"no texto de Romanos 14"*, *"lá no capítulo 4 de Oséias"*), sem parênteses e sem preposições órfãs.
+- **Zero referências bíblicas entre parênteses no corpo falado:** **NÃO** insira `(Fp 1.12)`, `(Os 4.1)`, `(cf. 2Rs 14.25)` nem `(Ref)` repetido no final do versículo-chave. Quando uma passagem bíblica for relevante para apoiar um ponto ou introduzir citação direta, **integre-a naturalmente na fala** (*"nas palavras de Filipenses 3.10-11:"*, *"no texto de Romanos 14"*, *"no capítulo 4 de Oséias"*), sem parênteses e sem preposições órfãs.
 - **Zero Markdown no texto falado:** não use `**negrito**`, `*itálico*` nem `##` no corpo do roteiro.
 - **Algarismos para leitura rápida na tela:** escreva datas, capítulos, versículos, percentuais e números altos em **algarismos arábicos** (`1780`, `612`, `10%`, `120 mil`, `capítulo 22`, `Romanos 14`, `artigos 15 e 16`) e séculos de forma limpa (`século VIII` ou `século 20`), nunca por extenso longo.
 - **Não use dois pontos (`:`)** no corpo do texto, exceto imediatamente antes de citações diretas da Bíblia (incluindo o versículo-chave).
 
-## 3. Estrutura da Etapa 1 (Versão Longa)
+## 3. Estrutura da Etapa 1 (`original_paragraphs`)
 1. **Abertura estilo aula:**
    - `Olá! Sejam bem-vindos à aula X do curso Y.` *(para Aula 00: `aula introdutória`)*
    - `Hoje nós vamos…` (resumo claro alinhado à `direcao` das diretrizes)
    - `Vamos ler juntos o texto-chave que está em [Referência por extenso]: “[Texto exato da apostila]”` *(sem `(Ref)` entre parênteses no final)*
-   - Convite breve à oração (sem escrever a oração), seguido de linha em branco e **`(Oração)`**.
+   - Convite breve à oração (sem escrever a oração), seguido de `""`, **`(Oração)`**, `""`.
 2. **Introdução (sem colchetes `[N]`):** todos os parágrafos da introdução já sem índices `[1]`, `[2]`, ..., iniciando com transição natural ligada ao texto-chave.
 3. **Corpo da Aula:** todos os tópicos na ordem original, cada título já no formato **`(TÍTULO DO TÓPICO EM CAIXA ALTA)`**, seguido de todos os parágrafos do tópico numerados sequencialmente `[1]`, `[2]`, ..., `[N]` (reiniciando em `[1]` a cada tópico).
-4. **O que ignorar no roteiro falado:** IGNORE `Ideia Central`, `Perguntas para reflexão`, `Perguntas para discussão` e `Tarefas de casa` (as 3 seções de fechamento serão anexadas automaticamente ao Google Doc por `publish_teleprompter`).
-
-## Checkpoint Local da Versão Longa (Git — Preservar Intacto)
-1. Salve a versão longa da Etapa 1 com `write_file` em `{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md` (sempre 2 dígitos com zero à esquerda, ex.: `aula_07_teleprompter.md`).
-2. Valide se a chave GPG está destravada (`gpg-connect-agent 'keyinfo --list' /bye`). Se estiver, faça o commit único usando `git -C` (NUNCA `cd ... &&`):
-   ```bash
-   git -C "/mnt/c/Users/lplim/repos/revisao_ebd" add "{local_course_dir}/teleprompter/aula_{XX}_teleprompter.md" && git -C "/mnt/c/Users/lplim/repos/revisao_ebd" commit -m "Curso [Nome do Curso] - Aula [XX] - versão teleprompter"
-   ```
-3. **NUNCA sobrescreva** esse arquivo `.md` na Etapa 2 — ele deve permanecer sempre na versão longa completa.
+4. **O que ignorar no roteiro falado:** IGNORE `Ideia Central`, `Perguntas para reflexão`, `Perguntas para discussão` e `Tarefas de casa` (as 3 seções de fechamento serão anexadas automaticamente à aba `✅ Revisada` por `publish_teleprompter`).
 
 ---
 
-# ETAPA 2 — REDUÇÃO EDITORIAL PURA (EM MEMÓRIA → GOOGLE DOCS)
+# ETAPA 2 — REDUÇÃO EDITORIAL PURA (DESTINO: 1ª ABA `✅ Revisada`)
 
 Como o texto da Etapa 1 já saiu pronto em voz, fluidez e formatação, dedique esta etapa **exclusivamente à redução de volume e consolidação estrutural** no padrão Bruna, guiada pelas **Diretrizes da aula**.
 
@@ -99,20 +95,19 @@ Como o texto da Etapa 1 já saiu pronto em voz, fluidez e formatação, dedique 
 
 ---
 
-# ETAPA FINAL — PUBLICAÇÃO DA VERSÃO REDUZIDA NO GOOGLE DOCS
+# ETAPA FINAL — PUBLICAÇÃO NAS DUAS ABAS DO GOOGLE DOCS
 
-- **NÃO altere nem sobrescreva** o arquivo `.md` local salvo na Etapa 1 (ele preserva a versão longa no Git).
-- Chame `ebd-google` → `publish_teleprompter` enviando a **versão reduzida final da Etapa 2**:
-  - `course`: `<curso>`
-  - `lesson_num`: `<N>`
-  - `title`: `title_full` retornado por `read_lesson` (ex.: `"Aula 07: ..."`)
-  - `teleprompter_paragraphs`: lista ordenada de parágrafos da versão reduzida final da Etapa 2 (abertura, `""`, `"(Oração)"`, `""`, 3 parágrafos da introdução sem `[N]`, e para cada tópico: `""`, `"(TÍTULO EM CAIXA ALTA)"`, `[1] ...`, `[2] ...`, `[3] ...`, `[4] ...`).
-  - `source_tab`: `active_tab` retornado por `read_lesson`.
+Chame `ebd-google` → `publish_teleprompter` uma única vez enviando **ambas as versões**:
+- `course`: `<curso>`
+- `lesson_num`: `<N>`
+- `title`: `title_full` retornado por `read_lesson` (ex.: `"Aula 07: ..."`)
+- `teleprompter_paragraphs`: lista ordenada de parágrafos da **versão reduzida (Etapa 2)** → gravada na **1ª aba `✅ Revisada`** (com `Ideia Central`, `Perguntas para reflexão` e `Tarefas de casa` anexadas automaticamente ao final).
+- `original_paragraphs`: lista ordenada de parágrafos da **versão longa (Etapa 1)** → gravada na **2ª aba `✍🏽 Original`**.
+- `source_tab`: `active_tab` retornado por `read_lesson`.
 
 ---
 
 # MENSAGEM FINAL AO USUÁRIO
 Responda de forma direta e concisa contendo:
-1. O caminho COMPLETO e ABSOLUTO do arquivo `.md` (versão longa preservada) em formato de texto puro (dentro de crases ou bloco de código, SEM formatar como link).
-2. Estatísticas rápidas da redução aplicada no Google Doc: palavras Etapa 1 (`.md` longo) → Etapa 2 (Doc reduzido) e `%` reduzida, confirmando a estrutura final (`3` parágrafos na introdução + `4` blocos por tópico).
-3. A aba fonte utilizada da apostila (`Revisada` ou `Tmp`), o título e o link do Google Doc de teleprompter criado/atualizado no Drive.
+1. O título e os links diretos do Google Doc publicado no Drive: aba **`✅ Revisada`** (`revisada_tab_url`) e aba **`✍🏽 Original`** (`original_tab_url`).
+2. Estatísticas rápidas da redução: palavras na aba `✍🏽 Original` (Etapa 1) → aba `✅ Revisada` (Etapa 2) e `%` reduzida, confirmando a estrutura final (`3` parágrafos na introdução + `4` blocos por tópico).
