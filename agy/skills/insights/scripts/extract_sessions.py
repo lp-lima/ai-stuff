@@ -232,6 +232,18 @@ def parse_history(cutoff_dt: datetime.datetime):
     }
 
 
+def unquote_arg(val) -> str:
+    if val is None:
+        return ""
+    s = str(val).strip()
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        try:
+            return str(json.loads(s))
+        except Exception:
+            return s[1:-1]
+    return s
+
+
 def parse_transcript(path: Path, cid: str, db_info: dict):
     steps = []
     with path.open("r", errors="replace") as fh:
@@ -247,6 +259,7 @@ def parse_transcript(path: Path, cid: str, db_info: dict):
     user_messages = []
     assistant_messages = []
     models_used = collections.Counter()
+    current_ui_model = None
     tool_calls_counter = collections.Counter()
     tool_errors = []
     mcp_tools_used = collections.Counter()
@@ -274,13 +287,16 @@ def parse_transcript(path: Path, cid: str, db_info: dict):
 
         if stype == "USER_INPUT":
             raw = st.get("content", "")
+            mm = re.search(r"Model Selection`\s+from\s+.*?\s+to\s+([^.\n]+)\.", raw)
+            if mm:
+                current_ui_model = mm.group(1).strip()
             req = extract_user_request(raw)
             if req:
                 user_messages.append(req)
                 if req.startswith("/"):
                     slash_in_prompts[req.split()[0].lower()] += 1
         elif stype == "PLANNER_RESPONSE":
-            m = st.get("model") or "unknown"
+            m = st.get("model") or current_ui_model or "unknown"
             models_used[m] += 1
             tokens["input"] += int(st.get("input_tokens") or 0)
             tokens["cache_read"] += int(st.get("cache_read_tokens") or 0)
@@ -301,11 +317,11 @@ def parse_transcript(path: Path, cid: str, db_info: dict):
                 elif tname == "run_workflow":
                     workflow_runs += 1
                 elif tname == "call_mcp_tool":
-                    srv = targs.get("ServerName") or targs.get("server_name") or "?"
-                    mtool = targs.get("ToolName") or targs.get("tool_name") or "?"
+                    srv = unquote_arg(targs.get("ServerName") or targs.get("server_name") or "?")
+                    mtool = unquote_arg(targs.get("ToolName") or targs.get("tool_name") or "?")
                     mcp_tools_used[f"{srv}/{mtool}"] += 1
                 elif tname == "read_file":
-                    p = str(targs.get("Path") or targs.get("path") or "")
+                    p = unquote_arg(targs.get("Path") or targs.get("path") or "")
                     sm = re.search(r"/skills/([^/]+)/SKILL\.md", p)
                     if sm:
                         skills_read.add(sm.group(1))
@@ -319,10 +335,10 @@ def parse_transcript(path: Path, cid: str, db_info: dict):
             if is_err:
                 cat = classify_error(tname, status, err_field, content)
                 cmd_snippet = ""
-                if tname in ("run_command", "run_command".lower()):
-                    cmd_snippet = truncate(str(targs.get("CommandLine") or ""), 140)
+                if tname == "run_command":
+                    cmd_snippet = truncate(unquote_arg(targs.get("CommandLine") or ""), 140)
                 elif tname == "call_mcp_tool":
-                    cmd_snippet = f"{targs.get('ServerName','')}/{targs.get('ToolName','')}"
+                    cmd_snippet = f"{unquote_arg(targs.get('ServerName',''))}/{unquote_arg(targs.get('ToolName',''))}"
                 elif targs:
                     cmd_snippet = truncate(json.dumps(targs, ensure_ascii=False), 120)
                 err_snippet = truncate(err_field or content[-300:], 180)

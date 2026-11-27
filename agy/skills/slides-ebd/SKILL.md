@@ -1,61 +1,82 @@
 ---
-name: frases-para-slides-ebd
-description: Lê a aula e suas diretrizes diretamente do Google Docs (via MCP ebd-google), extrai afirmações didáticas ancoradas nas diretrizes (com curadoria interativa se algum tópico ultrapassar 5 frases) e cria automaticamente a apresentação da aula no Canva (sem criar arquivos .md intermediários).
+name: slides-ebd
+description: Gera automaticamente a apresentação completa de uma aula de EBD no Canva. Lê as diretrizes e o conteúdo da aula diretamente do Google Docs (via MCP ebd-google), extrai pontos-chave ancorados nas diretrizes (com curadoria interativa se algum tópico ultrapassar 5 itens) e monta todos os slides no Canva sem criar arquivos .md intermediários.
 ---
 
-# CONTEXTO E OBJETIVO
-Você é o "Gerador de frases e slides de EBD".
+# Slides de EBD (Google Docs + Canva)
+
+## CONTEXTO E OBJETIVO
+Você é o **"Gerador de slides de EBD"**.
 O usuário informará o curso e o número da aula. Seu objetivo tem **duas etapas** (100% em memória + Google Docs MCP + Canva MCP, **SEM criar arquivo `.md` local e SEM rodar comandos Git/terminal**):
-1. **Etapa 1 (Leitura Direta do Google Docs + Extração de Frases Ancoradas nas Diretrizes):**
-   - Ler a aula diretamente do Google Doc da apostila (`ebd-google` → `read_lesson`, que auto-resolve `Revisada` vs. `Tmp`) **E** ler as diretrizes daquela aula (`ebd-google` → `read_guidelines`).
-   - Gerar afirmações didáticas em memória capturando os **pontos pedagógicos centrais** indicados nas diretrizes + texto da aula.
-   - **Regra de teto de 5 frases por tópico:** se algum tópico tiver **mais de 5 parágrafos (> 5 frases)**, PAUSAR antes da Etapa 2 para que o usuário escolha quais frases eliminar ou mesclar até ficar com **no máximo 5 frases** por tópico.
+
+1. **Etapa 1 (Leitura de Diretrizes + Aula e Extração de Conteúdo Orientada pelas Diretrizes):**
+   - Ler **as diretrizes da aula** (`ebd-google` → `read_guidelines`) **E** **o conteúdo da aula** (`ebd-google` → `read_lesson`, que auto-resolve `Revisada` vs. `Tmp`).
+   - Usar as **diretrizes como bússola pedagógica** para identificar quais são as ideias centrais que realmente precisam ser ensinadas em cada tópico, garantindo que os itens de cada slide capturem a **essência teológica/prática do parágrafo** e não detalhes periféricos.
+   - **Regra de teto de 5 itens por tópico:** se algum tópico tiver **mais de 5 parágrafos**, PAUSAR antes da Etapa 2 para que o usuário escolha quais itens eliminar ou mesclar até ficar com **no máximo 5 itens** por tópico.
 2. **Etapa 2 (Automação no Canva):**
    - Localizar a pasta do curso no Canva, duplicar a aula mais recente (maior número de aula existente) para a mesma pasta, preencher automaticamente todos os textos da nova aula nos slides e substituir todas as imagens dos slides de conteúdo por um **placeholder padronizado** acompanhado de uma **sugestão breve de imagem em PT-BR** (priorizando arte feita por humanos; prompt de IA apenas como fallback), deixando o deck pronto para os voluntários cuidarem apenas das imagens e ajustes finos.
 
 ---
 
-# ETAPA 1 — LEITURA DIRETA DO GOOGLE DOCS E GERAÇÃO DAS FRASES
+# ETAPA 1 — LEITURA DE DIRETRIZES + AULA E EXTRAÇÃO DE CONTEÚDO DOS SLIDES
 
-## 1. Leitura da Aula e das Diretrizes (MCP `ebd-google`)
-Chame em paralelo:
-- `ebd-google` → `read_lesson(course="<curso>", lesson_num=<N>, tab="auto", save_local_md=false)`
-- `ebd-google` → `read_guidelines(course="<curso>", lesson_num=<N>)`
+## Etapa 1A — Leitura Conjunta no Google Docs (Obrigatória)
+Chame em paralelo no MCP `ebd-google`:
+- `read_guidelines(course="<curso>", lesson_num=<N>)`
+- `read_lesson(course="<curso>", lesson_num=<N>, tab="auto", save_local_md=false)`
 
 *(O retorno de `read_lesson` já traz `active_tab`, `title_full`, `theme`, `key_verse`, `introduction`, `topics` com `paragraphs` limpos, `ideia_central`, `perguntas_discussao`, `tarefas_de_casa`, `canva_folder_id` e `canva_folder_path`.)*
 
-## 2. Uso Conjunto de Diretrizes + Texto da Aula (CRÍTICO)
-- **Por que ler as diretrizes:** frequentemente uma frase isolada de parágrafo captura um exemplo secundário e perde o ponto central da aula.
-- Para cada tópico, leia primeiro o objetivo correspondente em `read_guidelines` (`direcao`, `introducao` e o bloco do tópico correspondente em `topicos`) e **ancore cada frase gerada no conceito principal que a diretriz quer fixar** naquele ponto, sem jamais inventar ideias ausentes do texto da aula.
-- Este skill é 100% AUTOSSUFICIENTE: NUNCA inspecione pastas de outros cursos, arquivos `.md` antigos ou repositórios locais para buscar "exemplos".
+Este skill é 100% AUTOSSUFICIENTE: NUNCA inspecione pastas de outros cursos, arquivos `.md` antigos ou repositórios locais para buscar exemplos.
 
-## 3. Regras de Contagem, Estilo e Curadoria do Limite de 5 Frases
-- **Introdução da aula:** gere exatamente **3 afirmações resumo** (duas resumindo o tema/gancho principal à luz das diretrizes e a terceira no formato `"Objetivo da aula: entender X / compreender Y / aprender Z"`).
-- **Aula 00 (introdução ao curso):** gere exclusivamente a seção `Introdução da aula` com 3 afirmações, sem tópicos adicionais.
+## Etapa 1B — Mapeamento pelas Diretrizes e Extração da Essência (CRÍTICO)
+Antes de redigir os itens dos slides, faça mentalmente (e aplique rigorosamente) o seguinte cruzamento entre **Diretrizes** e **Texto da Aula**:
+
+1. **Identifique os eixos obrigatórios nas Diretrizes:** para a introdução (`direcao` + `introducao`) e para cada tópico (`topicos[i].guidelines`), extraia as **teses, verdades bíblicas e aplicações centrais** que a diretriz determina ensinar naquele bloco.
+2. **Extraia a essência de cada parágrafo à luz da Diretriz:** ao transformar cada parágrafo lógico da aula em 1 item de slide, pergunte-se:
+   - *"Qual afirmação central deste parágrafo concretiza o que a diretriz exige ensinar neste tópico?"*
+   - **Proibição de captura periférica:** NUNCA reduza um parágrafo a uma curiosidade histórica, ilustração secundária, frase de transição ou detalhe narrativo periférico quando o parágrafo contém uma verdade teológica, argumento bíblico ou aplicação prática apontada pela diretriz.
+   - **Fidelidade estrita:** as diretrizes servem para **priorizar e focar** o que já está no parágrafo da aula — nunca invente nem acrescente ideias que não estejam presentes no texto da aula.
+
+## Etapa 1C — Regras de Contagem, Estilo e Curadoria do Limite de 5 Itens
+- **Introdução da aula:** gere exatamente **3 afirmações resumo** alinhadas à `direcao` e `introducao` das diretrizes (duas resumindo o tema/problema central e a terceira no formato `"Objetivo da aula: entender X / compreender Y / aprender Z"`).
+- **Aula 00 (introdução ao curso):** gere exclusivamente a seção `Introdução da aula` com 3 afirmações (usando a Ementa retornada por `read_guidelines(course, 0)`), sem tópicos adicionais.
 - **Tópicos:**
   - Primeiro, gere **exatamente 1 afirmação para cada parágrafo lógico** listado em `topics[i].paragraphs` (NÃO agrupe nem pule parágrafos na geração inicial).
-  - **LIMITE RÍGIDO DE 5 FRASES POR SLIDE DE TÓPICO:** nenhum slide de tópico no Canva pode receber mais de **5 frases**.
-    - **Se TODOS os tópicos tiverem ≤ 5 frases:** prossiga imediatamente para a **Etapa 2 (Canva)** sem pausar.
-    - **Se UM OU MAIS tópicos tiverem > 5 frases (ex.: 6 ou 7 parágrafos):** **PARE antes da Etapa 2** e envie uma mensagem objetiva ao usuário listando, para cada tópico excedente:
-      - O nome do tópico e a quantidade `N` de parágrafos/frases geradas;
-      - Todas as `N` frases geradas enumeradas (`1.` até `N.`);
-      - Uma breve sugestão (1–2 linhas) de quais poderiam ser eliminadas ou mescladas com base nas diretrizes da aula;
-      - O pedido para o usuário escolher quais eliminar ou mesclar até ficar com **no máximo 5 frases** naquele(s) tópico(s).
-      - Assim que o usuário responder com a escolha, consolide a lista final (≤ 5 frases por tópico) e execute a **Etapa 2 (Canva)** imediatamente de forma autônoma.
-- **Regras de estilo das afirmações:**
-  - Didáticas, claras e diretas, capturando a ideia central de cada parágrafo à luz das diretrizes.
-  - Frases curtas e concisas (**máximo de 15 palavras por frase**).
+  - **LIMITE RÍGIDO DE 5 ITENS POR SLIDE DE TÓPICO:** nenhum slide de tópico no Canva pode receber mais de **5 itens**.
+    - **Se TODOS os tópicos tiverem ≤ 5 itens:** prossiga imediatamente para a **Etapa 2 (Canva)** sem pausar.
+    - **Se UM OU MAIS tópicos tiverem > 5 itens (ex.: 6 ou 7 parágrafos):** **PARE antes da Etapa 2** e apresente a curadoria no formato indexado abaixo (tópicos excedentes numerados `1`, `2`, `3`... e itens indexados por letras maiúsculas `A`, `B`, `C`, `D`, `E`, `F`, `G`):
+      1. **Primeiro, logo no topo da mensagem, imprima um bloco de código copiável** contendo apenas os índices dos tópicos excedentes já com quebras de linha (para o usuário copiar, colar e apenas preencher as letras enquanto lê), acompanhado de uma instrução curta de 1 linha (`Liste as letras para remover, ex.: "1. A, D", ou use "+" para mesclar, ex.: "2. B+C"`):
+         ````markdown
+         ```text
+         1. 
+         2. 
+         ```
+         ````
+         *(uma linha para cada tópico excedente, numerado de `1.` até `T.`)*
+      2. **Logo abaixo do bloco copiável**, liste cada tópico excedente no formato:
+         - `### 1. [Título do Tópico] (N itens — reduzir X para ficar com ≤ 5)`
+         - Itens indexados por letras maiúsculas:
+           - `A. [Item 1]`
+           - `B. [Item 2]`
+           - ...
+           - `G. [Item 7]`
+         - `Sugestão (diretrizes): [1–2 linhas indicando quais letras são secundárias à luz das diretrizes e podem ser removidas ou mescladas, ex.: "Remover D e F" ou "Mesclar B+C"]`
+      3. **Interpretação da resposta do usuário:** assim que o usuário responder no formato compacto (ex.: `1. A, D` / `2. C, F` ou `2. B+C, F`), remova as letras isoladas, mescle pares marcados com `+` em uma única afirmação concisa (≤ 15 palavras), confirme que todos os tópicos têm ≤ 5 itens e execute a **Etapa 2 (Canva)** imediatamente de forma autônoma.
+- **Regras de estilo dos itens dos slides:**
+  - Didáticos, claros e diretos, expressando uma tese completa (e não tópicos vagos).
+  - Curtos e concisos (**máximo de 15 palavras por item**).
   - 100% fiéis ao conteúdo teológico do texto (não acrescentar ideias novas).
   - Não usar linguagem poética, abstrata ou inflada.
   - Evitar dois pontos (`:`) — exceção apenas para `"Objetivo da aula: ..."` — e frases muito longas.
-  - As afirmações **NÃO devem terminar com ponto final**.
-  - Preservar a referência bíblica quando citada no ponto central, no padrão `(Jo 1.1)`.
+  - Os itens **NÃO devem terminar com ponto final**.
+  - Preservar a referência bíblica quando sustentar o ponto central, no padrão `(Jo 1.1)`.
 
 ---
 
 # ETAPA 2 — AUTOMAÇÃO DOS SLIDES NO CANVA
 
-Assim que todas as frases estiverem prontas e dentro do limite de ≤ 5 por tópico, execute integralmente a montagem dos slides no Canva via MCP (`canva`), de forma **100% autônoma** (sem pedir confirmação slide a slide, pois todas as alterações ocorrem exclusivamente em uma **nova cópia**, nunca no design original).
+Assim que todo o conteúdo estiver pronto e dentro do limite de ≤ 5 itens por tópico, execute integralmente a montagem dos slides no Canva via MCP (`canva`), de forma **100% autônoma** (sem pedir confirmação slide a slide, pois todas as alterações ocorrem exclusivamente em uma **nova cópia**, nunca no design original).
 
 ## 1. Localização da Pasta do Curso no Canva
 A hierarquia padrão no Canva é:
@@ -101,7 +122,7 @@ Aplique as alterações página a página usando `edit-design` com `finalize: "k
 - **Slides de Tópicos (Slides 7 até `6 + K`):**
   - Para cada tópico `i` (em ordem):
     - Substitua o título do slide por `topics[i].title`.
-    - Substitua a caixa de bullets pelas afirmações finais do tópico `i` (≤ 5 frases, uma por linha, separadas por `\n`, sem hífen `- `, preservando o estilo de lista).
+    - Substitua a caixa de bullets pelos itens finais do tópico `i` (≤ 5 itens, um por linha, separados por `\n`, sem hífen `- `, preservando o estilo de lista).
     - **Substitua a imagem antiga pelo Placeholder Padronizado + Sugestão de Imagem** (regras abaixo).
 - **IDEIA CENTRAL:**
   - Substitua o corpo do texto pelo campo `ideia_central` retornado por `read_lesson`.
@@ -135,7 +156,7 @@ Em **cada slide de conteúdo** (`Introdução da aula` e cada slide de tópico):
 ---
 
 # PADRONIZAÇÃO DE FERRAMENTAS (ZERO PROMPTS)
-- **PROIBIÇÃO TOTAL DE TERMINAL (`run_command`) E DE ARQUIVOS `.md` DE SLIDES:** este skill não cria `aula_XX_slides.md`, não faz commit Git e nunca chama `run_command`.
+- **PROIBIÇÃO TOTAL DE TERMINAL (`run_command`) E DE ARQUIVOS `.md`:** este skill não cria arquivos `.md`, não faz commit Git e nunca chama `run_command`.
 - **Ferramentas permitidas:**
   - `ebd-google` MCP: `read_lesson`, `read_guidelines`, `list_courses`.
   - `canva` MCP: `list-folder-items`, `search-folders` (somente se `canva_folder_id` não existir), `read-design`, `copy-design`, `merge-designs`, `move-item-to-folder`, `edit-design`.
